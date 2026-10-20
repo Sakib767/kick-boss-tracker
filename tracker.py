@@ -7,7 +7,9 @@ import time
 
 # গোপন তথ্যগুলো GitHub Secrets থেকে অটোমেটিক আসবে
 KICK_URL = os.environ.get("KICK_URL", "")
-WEBHOOK = os.environ.get("RENDER_WEBHOOK", "")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
 KEYWORDS = ["TICKET", "BTC", "STAKE CASH", "WHEEL"]
 
 # ৩০ মিনিট = ১৮০০ সেকেন্ড
@@ -52,20 +54,28 @@ def ocr_regions(frame):
     return " ".join(texts)
 
 def send_alert(keyword):
+    """সরাসরি টেলিগ্রাম বটে মেসেজ পাঠাবে"""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("ERROR: Telegram token or chat ID missing!")
+        return
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": f"🚨 **Kick Alert!**\nDetected: {keyword}\nChannel: {KICK_URL}",
+        "parse_mode": "Markdown"
+    }
+    
     try:
-        r = requests.post(
-            WEBHOOK,
-            json={"action": "giveaway_detected", "text": keyword},
-            timeout=10,
-        )
+        r = requests.post(url, json=payload, timeout=10)
         print(f"[SENT] {keyword} -> HTTP {r.status_code}")
     except Exception as e:
-        print(f"[ERR] Webhook failed: {e}")
+        print(f"[ERR] Telegram message failed: {e}")
 
 def main():
     print(f"Target Channel: {KICK_URL}")
-    if not KICK_URL or not WEBHOOK:
-        print("ERROR: KICK_URL or RENDER_WEBHOOK env missing! Check GitHub Secrets.")
+    if not KICK_URL:
+        print("ERROR: KICK_URL missing! Check GitHub Secrets.")
         return
 
     try:
