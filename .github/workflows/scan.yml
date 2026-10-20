@@ -1,0 +1,33 @@
+name: Kick Visual Scan
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # প্রতি ঘণ্টার শুরুতে একবার চালু হবে
+  workflow_dispatch:      # ম্যানুয়ালি চালানোর জন্য বাটন
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40   # ৩০ মিনিট স্ক্যানের জন্য ৪০ মিনিট সময় দিলাম
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr libtesseract-dev ffmpeg libgl1
+
+      - name: Install Python deps
+        run: |
+          pip install --upgrade pip
+          pip install yt-dlp opencv-python-headless pytesseract requests
+
+      - name: Run tracker
+        env:
+          KICK_URL: ${{ secrets.KICK_URL }}
+          RENDER_WEBHOOK: ${{ secrets.RENDER_WEBHOOK }}
+        run: python tracker.py
