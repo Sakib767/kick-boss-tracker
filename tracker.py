@@ -6,20 +6,28 @@ import os
 import time
 import io
 
-# গোপন তথ্যগুলো GitHub Secrets থেকে অটোমেটিক আসবে
+# গোপন তথ্যগুলো
 KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-KEYWORDS = ["TICKET", "BTC", "STAKE CASH", "WHEEL", "USE CODE", "CLASSYBEEF"]
+# keywords.txt ফাইল থেকে কীওয়ার্ড পড়া
+try:
+    with open("keywords.txt", "r") as f:
+        KEYWORDS = [line.strip().upper() for line in f.readlines() if line.strip()]
+except FileNotFoundError:
+    KEYWORDS = ["TICKET", "STAKE CASH", "BONUS BUY", "BTC"]
 
-SCAN_DURATION = 1800   
-SCAN_INTERVAL = 15     
+# ৬০ মিনিট = ৩৬০০ সেকেন্ড (পুরো ১ ঘণ্টা স্ক্যান করবে)
+SCAN_DURATION = 3600   
+
+# প্রতি ১ মিনিট (৬০ সেকেন্ড) পর পর স্ক্যান হবে
+SCAN_INTERVAL = 60     
 
 def get_stream_url():
     ydl_opts = {
         "quiet": True,
-        "format": "best",  # <--- এখানে worst থেকে best করা হয়েছে (যাতে লেখা পরিষ্কার হয়)
+        "format": "best", 
         "noplaylist": True,
         "live_from_start": False,
     }
@@ -40,14 +48,13 @@ def grab_frame(stream_url):
 def ocr_regions(frame):
     h, w = frame.shape[:2]
     regions = [
-        frame[:, : int(w * 0.22)],                      
+        frame[:, : int(w * 0.30)],                      
         frame[int(h * 0.25):int(h * 0.75), int(w * 0.25):int(w * 0.75)],  
         frame[int(h * 0.10):int(h * 0.50), int(w * 0.75):], 
     ]
     texts = []
     for region in regions:
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        # রেজোলিউশন আরও একটু বাড়িয়ে দিলাম
         gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
         _, gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
         
@@ -62,6 +69,7 @@ def send_alert(keyword, frame):
 
     _, buffer = cv2.imencode('.jpg', frame)
     photo_bytes = io.BytesIO(buffer)
+    photo_bytes.seek(0)
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     
@@ -71,18 +79,20 @@ def send_alert(keyword, frame):
         "parse_mode": "Markdown"
     }
     
-    files = {
-        "photo": ("screenshot.jpg", photo_bytes, "image/jpeg")
-    }
+    files = {"photo": ("screenshot.jpg", photo_bytes, "image/jpeg")}
     
     try:
         r = requests.post(url, data=payload, files=files, timeout=15)
         print(f"[SENT] {keyword} screenshot -> HTTP {r.status_code}", flush=True)
     except Exception as e:
         print(f"[ERR] Telegram photo failed: {e}", flush=True)
+    
+    # টেলিগ্রাম ব্লক এড়াতে ২ সেকেন্ড গ্যাপ
+    time.sleep(2) 
 
 def main():
     print(f"Target Channel: {KICK_URL}", flush=True)
+    print(f"Active Keywords: {KEYWORDS}", flush=True)
     
     try:
         stream_url = get_stream_url()
@@ -95,7 +105,7 @@ def main():
     found_already = set()
     iteration = 0
 
-    print(f"Starting {SCAN_DURATION//60} minutes scan loop...", flush=True)
+    print(f"Starting {SCAN_DURATION//60} minutes scan loop with {SCAN_INTERVAL}s interval...", flush=True)
     
     while time.time() < end_time:
         iteration += 1
@@ -108,17 +118,13 @@ def main():
             
             text = ocr_regions(frame)
             
-            # ডিবাগ করার জন্য: স্ক্রিপ্ট কী পড়ছে তা দেখাবে (প্রথম ৮০ অক্ষর)
-            safe_text = text.replace('\n', ' ')[:80]
-            print(f"[{iteration}] OCR Read: {safe_text}...", flush=True)
-            
             for kw in KEYWORDS:
                 if kw in text and kw not in found_already:
                     print(f"[{iteration}] 🚨 HIT: {kw}", flush=True)
                     send_alert(kw, frame) 
                     found_already.add(kw)
             
-            if iteration % 4 == 0 and not any(kw in text for kw in KEYWORDS):
+            if iteration % 2 == 0 and not any(kw in text for kw in KEYWORDS):
                 print(f"[{iteration}] Scanned... (No new hits)", flush=True)
                 
         except Exception as e:
