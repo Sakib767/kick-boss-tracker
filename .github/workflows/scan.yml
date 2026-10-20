@@ -2,10 +2,10 @@ name: Kick Visual Scan
 
 on:
   schedule:
-    - cron: "*/50 * * * *"   # প্রতি ঘণ্টার ০ এবং ৫০ মিনিটে ট্রিগার হবে
+    - cron: "0 * * * *"   # 👈 প্রতি ১ ঘণ্টায় একবার (১:০০, ২:০০, ৩:০০)
   workflow_dispatch:      
 
-# নতুন রান শুরু হলে পুরনো রান সাথে সাথে বাতিল হবে (জিরো ওভারল্যাপ)
+# নতুন রান শুরু হলে পুরনো রান সাথে সাথে বাতিল হবে
 concurrency:
   group: "kick-tracker"
   cancel-in-progress: true  
@@ -13,7 +13,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 360   # ৫ ঘণ্টা স্ক্যানের জন্য ৬ ঘণ্টা লিমিট দেওয়া হলো
+    timeout-minutes: 360   # ৫ ঘণ্টা টাইমার থাকলেও, ১ ঘণ্টা পর নতুন রান আসায় এটা বন্ধ হয়ে যাবে
     steps:
       - uses: actions/checkout@v4
 
