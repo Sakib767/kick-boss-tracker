@@ -11,26 +11,21 @@ KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-# keywords.txt ফাইল থেকে কীওয়ার্ড পড়া
+# keywords.txt থেকে কীওয়ার্ড পড়া
 try:
     with open("keywords.txt", "r") as f:
         KEYWORDS = [line.strip().upper() for line in f.readlines() if line.strip()]
 except FileNotFoundError:
     KEYWORDS = ["TICKET", "STAKE CASH", "BONUS BUY", "BTC"]
 
-# ৬০ মিনিট = ৩৬০০ সেকেন্ড (পুরো ১ ঘণ্টা স্ক্যান করবে)
-SCAN_DURATION = 3600   
+# ৫ ঘণ্টা = ১৮০০০ সেকেন্ড
+SCAN_DURATION = 18000   
 
 # প্রতি ১ মিনিট (৬০ সেকেন্ড) পর পর স্ক্যান হবে
 SCAN_INTERVAL = 60     
 
 def get_stream_url():
-    ydl_opts = {
-        "quiet": True,
-        "format": "best", 
-        "noplaylist": True,
-        "live_from_start": False,
-    }
+    ydl_opts = {"quiet": True, "format": "best", "noplaylist": True, "live_from_start": False}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(KICK_URL, download=False)
         return info["url"]
@@ -72,50 +67,54 @@ def send_alert(keyword, frame):
     photo_bytes.seek(0)
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-    
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "caption": f"🚨 **Kick Alert!**\nDetected: {keyword}\nChannel: {KICK_URL}",
         "parse_mode": "Markdown"
     }
-    
     files = {"photo": ("screenshot.jpg", photo_bytes, "image/jpeg")}
     
     try:
         r = requests.post(url, data=payload, files=files, timeout=15)
-        print(f"[SENT] {keyword} screenshot -> HTTP {r.status_code}", flush=True)
+        print(f"[SENT] {keyword} -> HTTP {r.status_code}", flush=True)
     except Exception as e:
         print(f"[ERR] Telegram photo failed: {e}", flush=True)
     
-    # টেলিগ্রাম ব্লক এড়াতে ২ সেকেন্ড গ্যাপ
-    time.sleep(2) 
+    time.sleep(2) # টেলিগ্রাম ব্লক এড়াতে ২ সেকেন্ড গ্যাপ
 
 def main():
-    print(f"Target Channel: {KICK_URL}", flush=True)
-    print(f"Active Keywords: {KEYWORDS}", flush=True)
+    print(f"Target: {KICK_URL}", flush=True)
+    print(f"Keywords: {KEYWORDS}", flush=True)
     
-    try:
-        stream_url = get_stream_url()
-        print("Successfully got stream URL.", flush=True)
-    except Exception as e:
-        print(f"[ERR] yt-dlp failed: {e}", flush=True)
-        return
-
     end_time = time.time() + SCAN_DURATION
     found_already = set()
     iteration = 0
+    stream_url = None
 
-    print(f"Starting {SCAN_DURATION//60} minutes scan loop with {SCAN_INTERVAL}s interval...", flush=True)
+    print(f"Starting {SCAN_DURATION//3600} hours scan loop...", flush=True)
     
     while time.time() < end_time:
         iteration += 1
         try:
+            # ১. স্ট্রিম লিংক না থাকলে (অফলাইন থাকলে) বের করার চেষ্টা করবে
+            if not stream_url:
+                try:
+                    stream_url = get_stream_url()
+                    print(f"[{iteration}] ✅ Stream is Online! Got URL.", flush=True)
+                except Exception as e:
+                    print(f"[{iteration}] 🔴 Stream is Offline or Error. Waiting 5 mins...", flush=True)
+                    time.sleep(300) # ৫ মিনিট অপেক্ষা করবে
+                    continue
+
+            # ২. ফ্রেম নেওয়ার চেষ্টা করবে
             frame = grab_frame(stream_url)
             if frame is None:
-                print(f"[{iteration}] No frame grabbed, retrying...", flush=True)
-                time.sleep(SCAN_INTERVAL)
+                print(f"[{iteration}] ⚠️ Frame grab failed (Stream might have gone offline). Refetching URL...", flush=True)
+                stream_url = None # লিংক রিসেট করবে
+                time.sleep(10)
                 continue
             
+            # ৩. OCR স্ক্যান
             text = ocr_regions(frame)
             
             for kw in KEYWORDS:
@@ -124,15 +123,18 @@ def main():
                     send_alert(kw, frame) 
                     found_already.add(kw)
             
-            if iteration % 2 == 0 and not any(kw in text for kw in KEYWORDS):
+            # প্রতি ১০ বারে একবার লগ দেবে, যাতে লগ স্প্যাম না হয়
+            if iteration % 10 == 0 and not any(kw in text for kw in KEYWORDS):
                 print(f"[{iteration}] Scanned... (No new hits)", flush=True)
                 
         except Exception as e:
-            print(f"[{iteration}] Error during scan: {e}", flush=True)
+            print(f"[{iteration}] Unexpected Error: {e}", flush=True)
+            stream_url = None
+            time.sleep(10)
             
         time.sleep(SCAN_INTERVAL)
 
-    print(f"✅ Scan completed. Total checks: {iteration}, Hits: {found_already}", flush=True)
+    print(f"✅ Scan completed.", flush=True)
 
 if __name__ == "__main__":
     main()
