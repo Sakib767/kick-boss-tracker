@@ -4,18 +4,19 @@ import pytesseract
 import requests
 import os
 import time
-import io  # ছবি পাঠানোর জন্য নতুন ইমপোর্ট
+import io
 
 # গোপন তথ্যগুলো GitHub Secrets থেকে অটোমেটিক আসবে
 KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-KEYWORDS = ["TICKET", "BTC", "STAKE CASH", "WHEEL"]
+# টেস্ট করার জন্য "USE CODE" এবং "CLASSYBEEF" যোগ করা হলো
+KEYWORDS = ["TICKET", "BTC", "STAKE CASH", "WHEEL", "USE CODE", "CLASSYBEEF"]
 
 # ৩০ মিনিট = ১৮০০ সেকেন্ড
 SCAN_DURATION = 1800   
-SCAN_INTERVAL = 15     # প্রতি ১৫ সেকেন্ড পর পর ফ্রেম নেবে
+SCAN_INTERVAL = 15     
 
 def get_stream_url():
     ydl_opts = {
@@ -32,7 +33,6 @@ def grab_frame(stream_url):
     cap = cv2.VideoCapture(stream_url)
     if not cap.isOpened():
         return None
-    # লাইভ এজে পৌঁছাতে কয়েকটা ফ্রেম ডিসকার্ড করি
     for _ in range(10):
         cap.read()
     ret, frame = cap.read()
@@ -40,31 +40,32 @@ def grab_frame(stream_url):
     return frame if ret else None
 
 def ocr_regions(frame):
-    """বাঁ সাইডবার এবং মাঝের অংশ থেকে টেক্সট বের করে।"""
+    """বাঁ সাইডবার, মাঝের পপআপ এবং ডান দিকের অংশ স্ক্যান করবে।"""
     h, w = frame.shape[:2]
     regions = [
-        frame[:, : int(w * 0.22)],                      # বাঁ সাইডবার
-        frame[int(h * 0.25):int(h * 0.75), int(w * 0.25):int(w * 0.75)],  # মাঝের popup
+        frame[:, : int(w * 0.22)],                      # ১. বাঁ সাইডবার
+        frame[int(h * 0.25):int(h * 0.75), int(w * 0.25):int(w * 0.75)],  # ২. মাঝের popup
+        frame[int(h * 0.10):int(h * 0.50), int(w * 0.75):], # ৩. ডান দিকের বোনাস/কোড বক্স (নতুন)
     ]
     texts = []
     for region in regions:
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+        # OCR আরও ভালো করার জন্য ছবিটা বড় এবং কনট্রাস্ট বাড়ানো হলো
+        gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        _, gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+        
         text = pytesseract.image_to_string(gray).upper()
         texts.append(text)
     return " ".join(texts)
 
 def send_alert(keyword, frame):
-    """টেলিগ্রামে ছবি এবং টেক্সট পাঠাবে"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("ERROR: Telegram token or chat ID missing!")
         return
 
-    # OpenCV ফ্রেমকে JPEG ছবিতে কনভার্ট করা
     _, buffer = cv2.imencode('.jpg', frame)
     photo_bytes = io.BytesIO(buffer)
 
-    # sendPhoto এন্ডপয়েন্ট ব্যবহার করছি
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     
     payload = {
@@ -115,7 +116,6 @@ def main():
             for kw in KEYWORDS:
                 if kw in text and kw not in found_already:
                     print(f"[{iteration}] 🚨 HIT: {kw}")
-                    # এখানে ফ্রেমটাও পাঠিয়ে দিচ্ছি
                     send_alert(kw, frame) 
                     found_already.add(kw)
             
