@@ -16,7 +16,7 @@ try:
     with open("keywords.txt", "r") as f:
         ALL_KEYWORDS = [line.strip().upper() for line in f.readlines() if line.strip()]
 except FileNotFoundError:
-    ALL_KEYWORDS = ["BONUS BUY ($100)", "STAKE CASH $50", "$100 IN BTC", "$200 IN BTC", "STAKE CASH $100", "PICK YOUR CARD", "($10)"]
+    ALL_KEYWORDS = ["BONUS BUY ($100)", "STAKE CASH $50", "$100 IN BTC", "$200 IN BTC", "STAKE CASH $100", "PICK YOUR CARD"]
 
 SCAN_DURATION = 18000   # ৫ ঘণ্টা
 SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর পর স্ক্যান
@@ -46,10 +46,8 @@ def send_alert(keyword, frame, box_coords=None):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
 
-    # নির্দিষ্ট শব্দের উপর ছোট সবুজ বক্স আঁকবে
     if box_coords:
         x, y, w, h = box_coords
-        # বক্সটা যাতে একটু বড় দেখায় তাই সামান্য প্যাডিং যোগ করা হলো
         pad = 5
         cv2.rectangle(frame, (max(0, x-pad), max(0, y-pad)), (x + w + pad, y + h + pad), (0, 255, 0), 2) 
         cv2.putText(frame, f"Matched: {keyword}", (max(0, x-pad), max(0, y - 15)), 
@@ -78,7 +76,6 @@ def send_alert(keyword, frame, box_coords=None):
     time.sleep(2)
 
 def find_keyword_box(keyword, words_data):
-    """কীওয়ার্ডের সঠিক লোকেশন খুঁজে বের করার ফাংশন"""
     kw_parts = keyword.split()
     
     for i in range(len(words_data)):
@@ -105,7 +102,7 @@ def main():
     iteration = 0
     stream_url = None
 
-    print(f"Starting Scan...", flush=True)
+    print(f"Starting 5-hour Scan...", flush=True)
     
     while time.time() < end_time:
         iteration += 1
@@ -134,7 +131,6 @@ def main():
             gray = cv2.cvtColor(game_area, cv2.COLOR_BGR2GRAY)
             data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
             
-            # শব্দগুলোকে একটি লিস্টে সাজানো
             words_data = []
             for i in range(len(data['text'])):
                 word = data['text'][i].strip().upper()
