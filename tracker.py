@@ -19,7 +19,7 @@ SCAN_INTERVAL = 15
 def get_stream_url():
     ydl_opts = {
         "quiet": True,
-        "format": "worst",
+        "format": "best",  # <--- এখানে worst থেকে best করা হয়েছে (যাতে লেখা পরিষ্কার হয়)
         "noplaylist": True,
         "live_from_start": False,
     }
@@ -38,7 +38,6 @@ def grab_frame(stream_url):
     return frame if ret else None
 
 def ocr_regions(frame):
-    """বাঁ সাইডবার, মাঝের পপআপ এবং ডান দিকের অংশ স্ক্যান করবে।"""
     h, w = frame.shape[:2]
     regions = [
         frame[:, : int(w * 0.22)],                      
@@ -48,6 +47,7 @@ def ocr_regions(frame):
     texts = []
     for region in regions:
         gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+        # রেজোলিউশন আরও একটু বাড়িয়ে দিলাম
         gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
         _, gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
         
@@ -83,10 +83,7 @@ def send_alert(keyword, frame):
 
 def main():
     print(f"Target Channel: {KICK_URL}", flush=True)
-    if not KICK_URL:
-        print("ERROR: KICK_URL missing! Check GitHub Secrets.", flush=True)
-        return
-
+    
     try:
         stream_url = get_stream_url()
         print("Successfully got stream URL.", flush=True)
@@ -110,13 +107,18 @@ def main():
                 continue
             
             text = ocr_regions(frame)
+            
+            # ডিবাগ করার জন্য: স্ক্রিপ্ট কী পড়ছে তা দেখাবে (প্রথম ৮০ অক্ষর)
+            safe_text = text.replace('\n', ' ')[:80]
+            print(f"[{iteration}] OCR Read: {safe_text}...", flush=True)
+            
             for kw in KEYWORDS:
                 if kw in text and kw not in found_already:
                     print(f"[{iteration}] 🚨 HIT: {kw}", flush=True)
                     send_alert(kw, frame) 
                     found_already.add(kw)
             
-            if iteration % 4 == 0:
+            if iteration % 4 == 0 and not any(kw in text for kw in KEYWORDS):
                 print(f"[{iteration}] Scanned... (No new hits)", flush=True)
                 
         except Exception as e:
