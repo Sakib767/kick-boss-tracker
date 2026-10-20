@@ -4,6 +4,7 @@ import pytesseract
 import requests
 import os
 import time
+import io  # ছবি পাঠানোর জন্য নতুন ইমপোর্ট
 
 # গোপন তথ্যগুলো GitHub Secrets থেকে অটোমেটিক আসবে
 KICK_URL = os.environ.get("KICK_URL", "")
@@ -53,24 +54,34 @@ def ocr_regions(frame):
         texts.append(text)
     return " ".join(texts)
 
-def send_alert(keyword):
-    """সরাসরি টেলিগ্রাম বটে মেসেজ পাঠাবে"""
+def send_alert(keyword, frame):
+    """টেলিগ্রামে ছবি এবং টেক্সট পাঠাবে"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("ERROR: Telegram token or chat ID missing!")
         return
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    # OpenCV ফ্রেমকে JPEG ছবিতে কনভার্ট করা
+    _, buffer = cv2.imencode('.jpg', frame)
+    photo_bytes = io.BytesIO(buffer)
+
+    # sendPhoto এন্ডপয়েন্ট ব্যবহার করছি
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": f"🚨 **Kick Alert!**\nDetected: {keyword}\nChannel: {KICK_URL}",
+        "caption": f"🚨 **Kick Alert!**\nDetected: {keyword}\nChannel: {KICK_URL}",
         "parse_mode": "Markdown"
     }
     
+    files = {
+        "photo": ("screenshot.jpg", photo_bytes, "image/jpeg")
+    }
+    
     try:
-        r = requests.post(url, json=payload, timeout=10)
-        print(f"[SENT] {keyword} -> HTTP {r.status_code}")
+        r = requests.post(url, data=payload, files=files, timeout=15)
+        print(f"[SENT] {keyword} screenshot -> HTTP {r.status_code}")
     except Exception as e:
-        print(f"[ERR] Telegram message failed: {e}")
+        print(f"[ERR] Telegram photo failed: {e}")
 
 def main():
     print(f"Target Channel: {KICK_URL}")
@@ -104,7 +115,8 @@ def main():
             for kw in KEYWORDS:
                 if kw in text and kw not in found_already:
                     print(f"[{iteration}] 🚨 HIT: {kw}")
-                    send_alert(kw)
+                    # এখানে ফ্রেমটাও পাঠিয়ে দিচ্ছি
+                    send_alert(kw, frame) 
                     found_already.add(kw)
             
             if iteration % 4 == 0:
