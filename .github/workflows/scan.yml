@@ -2,13 +2,18 @@ name: Kick Visual Scan
 
 on:
   schedule:
-    - cron: "0 * * * *"   # প্রতি ঘণ্টার শুরুতে একবার চালু হবে
-  workflow_dispatch:      # ম্যানুয়ালি চালানোর জন্য বাটন
+    - cron: "0 */4 * * *"   # প্রতি ৪ ঘণ্টায় একবার ট্রিগার হবে
+  workflow_dispatch:      
+
+# জিরো ওভারল্যাপ: নতুন রান শুরু হলে পুরনো রান সাথে সাথে বাতিল হবে
+concurrency:
+  group: "kick-tracker"
+  cancel-in-progress: true  
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 40   # ৩০ মিনিট স্ক্যানের জন্য ৪০ মিনিট সময় দিলাম
+    timeout-minutes: 360   # GitHub-এর সর্বোচ্চ ৬ ঘণ্টা লিমিট
     steps:
       - uses: actions/checkout@v4
 
@@ -31,4 +36,5 @@ jobs:
           KICK_URL: ${{ secrets.KICK_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PYTHONUNBUFFERED: 1
         run: python tracker.py
