@@ -4,3 +4,4 @@ $100 in BTC
 $200 in BTC
 $100 Stake Cash
 $200 Stake Cash
+$50 in BTC
