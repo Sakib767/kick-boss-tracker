@@ -16,7 +16,11 @@ KICK_CURL = os.environ.get("KICK_CURL", "")
 
 SCAN_DURATION = 18000   # ৫ ঘণ্টা
 SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর পর স্ক্যান
-HEARTBEAT_INTERVAL = 60 # প্রতি ৬০ সেকেন্ড (১ মিনিট) পর পর স্ট্যাটাস ছবি
+STATUS_CHECK_INTERVAL = 3600 # ১ ঘণ্টা পর পর শুধু টেক্সট স্ট্যাটাস
+
+# কুলডাউন টাইমার (সেকেন্ডে)
+CENTER_COOLDOWN = 120   # ২ মিনিট (PICK YOUR CARD এবং ENTER STAKE এর জন্য)
+OTHER_COOLDOWN = 600    # ১০ মিনিট (বাকি সব কীওয়ার্ডের জন্য)
 
 def parse_curl(curl_string):
     headers = {}
@@ -123,32 +127,34 @@ def main():
     cookie_status = "Loaded" if "Cookie" in headers else "Not Found (Guest)"
     
     print(f"Target: {KICK_URL}", flush=True)
-    print(f"Cookie Status: {cookie_status}", flush=True)
     
-    send_telegram_message(f"✅ Bot Started!\nCookie Status: {cookie_status}\nTracking has begun.")
+    send_telegram_message(f"✅ Bot Started!\nCookie Status: {cookie_status}\nTracking has begun for 5 hours.")
     
-    # কীওয়ার্ড লোড করা
+    # ২ মিনিট কুলডাউনের গ্রুপ
+    CENTER_KEYWORDS = [
+        "PICK YOUR CARD", 
+        "ENTER YOUR STAKE", 
+        "STAKE.COM USERNAME",
+        "STAKE COM USERNAME"
+    ]
+    
+    # ১০ মিনিট কুলডাউনের গ্রুপ (keywords.txt থেকে আসবে)
     try:
         with open("keywords.txt", "r") as f:
-            ALL_KEYWORDS = [line.strip().upper() for line in f.readlines() if line.strip()]
+            OTHER_KEYWORDS = [line.strip().upper() for line in f.readlines() if line.strip()]
     except FileNotFoundError:
-        ALL_KEYWORDS = ["BONUS BUY ($100)", "STAKE CASH $50", "$100 IN BTC", "$200 IN BTC", "STAKE CASH $100", "PICK YOUR CARD"]
-
-    # 👇 "PICK YOUR CARD" কে আলাদা করা হলো ২ মিনিটের কুলডাউনের জন্য
-    TARGET_CARD_KEYWORD = "PICK YOUR CARD"
-    # বাকি কীওয়ার্ডগুলো যেগুলো ১ বারই ধরবে
-    OTHER_KEYWORDS = [kw for kw in ALL_KEYWORDS if kw != TARGET_CARD_KEYWORD]
+        OTHER_KEYWORDS = ["BONUS BUY ($100)", "STAKE CASH $50", "$100 IN BTC", "$200 IN BTC", "STAKE CASH $100"]
+        
+    OTHER_KEYWORDS = [kw for kw in OTHER_KEYWORDS if kw not in CENTER_KEYWORDS]
 
     end_time = time.time() + SCAN_DURATION
-    found_already = set() # বাকি কীওয়ার্ডগুলোর জন্য মেমোরি
     iteration = 0
     stream_url = None
-    last_heartbeat_time = time.time()
+    last_status_time = time.time()
     
-    # 👇 PICK YOUR CARD এর কুলডাউন টাইমার (শুরুতে ০ করে দেওয়া হলো)
-    last_card_alert_time = 0 
+    last_alert_times = {} 
 
-    print(f"Starting Scan Loop...", flush=True)
+    print(f"Starting 5-hour Scan Loop...", flush=True)
     
     while time.time() < end_time:
         iteration += 1
@@ -190,34 +196,34 @@ def main():
             full_text = " ".join([wd['text'] for wd in words_data])
             current_time = time.time()
             
-            # 👇 ১. "PICK YOUR CARD" এর জন্য আলাদা চেক (২ মিনিটের কুলডাউন)
-            if TARGET_CARD_KEYWORD in full_text:
-                # যদি ২ মিনিট (১২০ সেকেন্ড) পার হয়ে যায়
-                if current_time - last_card_alert_time >= 120:
-                    print(f"[{iteration}] 🚨 HIT (Card): {TARGET_CARD_KEYWORD}", flush=True)
-                    match_box = find_keyword_box(TARGET_CARD_KEYWORD, words_data)
-                    caption = f"🚨 Kick Alert!\nDetected: {TARGET_CARD_KEYWORD}\nChannel: {KICK_URL}"
-                    send_telegram_photo(frame.copy(), caption, match_box, TARGET_CARD_KEYWORD) 
-                    # টাইমার রিসেট করা হলো
-                    last_card_alert_time = current_time
-                else:
-                    print(f"[{iteration}] ⏭️ Skipping '{TARGET_CARD_KEYWORD}' (Cooldown active)...", flush=True)
+            # ১. সেন্ট্রাল পপআপ চেক (২ মিনিট কুলডাউন)
+            for kw in CENTER_KEYWORDS:
+                if kw in full_text:
+                    last_alert = last_alert_times.get(kw, 0)
+                    if current_time - last_alert >= CENTER_COOLDOWN: 
+                        print(f"[{iteration}] 🚨 HIT (2min): {kw}", flush=True)
+                        match_box = find_keyword_box(kw, words_data)
+                        caption = f"🚨 Kick Alert!\nDetected: {kw}\nChannel: {KICK_URL}"
+                        send_telegram_photo(frame.copy(), caption, match_box, kw) 
+                        last_alert_times[kw] = current_time
+                    break 
 
-            # 👇 ২. বাকি কীওয়ার্ডগুলোর জন্য চেক (রানে একবারই)
+            # ২. বাকি কীওয়ার্ড চেক (১০ মিনিট কুলডাউন)
             for kw in OTHER_KEYWORDS:
-                if kw in full_text and kw not in found_already:
-                    print(f"[{iteration}] 🚨 HIT: {kw}", flush=True)
-                    match_box = find_keyword_box(kw, words_data)
-                    caption = f"🚨 Kick Alert!\nDetected: {kw}\nChannel: {KICK_URL}"
-                    send_telegram_photo(frame.copy(), caption, match_box, kw) 
-                    found_already.add(kw)
-                    break
+                if kw in full_text:
+                    last_alert = last_alert_times.get(kw, 0)
+                    if current_time - last_alert >= OTHER_COOLDOWN:
+                        print(f"[{iteration}] 🚨 HIT (10min): {kw}", flush=True)
+                        match_box = find_keyword_box(kw, words_data)
+                        caption = f"🚨 Kick Alert!\nDetected: {kw}\nChannel: {KICK_URL}"
+                        send_telegram_photo(frame.copy(), caption, match_box, kw) 
+                        last_alert_times[kw] = current_time
+                    break 
             
-            # ১ মিনিটের Heartbeat
-            if current_time - last_heartbeat_time >= HEARTBEAT_INTERVAL:
-                caption = f"⏱️ Status Update\nNo new match found yet.\nChannel: {KICK_URL}"
-                send_telegram_photo(frame.copy(), caption)
-                last_heartbeat_time = current_time
+            # ৩. ১ ঘণ্টা পর পর শুধু টেক্সট মেসেজ (কোনো ছবি নয়)
+            if current_time - last_status_time >= STATUS_CHECK_INTERVAL:
+                send_telegram_message(f"⏱️ Bot is alive & scanning.\nNo match in the last 1 hour.\nChannel: {KICK_URL}")
+                last_status_time = current_time
             
         except Exception as e:
             print(f"[{iteration}] Error: {e}", flush=True)
