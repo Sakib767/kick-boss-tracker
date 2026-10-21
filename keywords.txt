@@ -4,3 +4,4 @@ $100 in BTC
 $200 in BTC
 Stake Cash $100
 PICK YOUR CARD
+Enter your Stake.com username
