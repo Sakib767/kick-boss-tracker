@@ -11,8 +11,10 @@ from datetime import datetime
 # গোপন তথ্যগুলো
 KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 KICK_CURL = os.environ.get("KICK_CURL", "") 
+
+# 👇 এখানে সরাসরি তোমার গ্রুপের Chat ID বসিয়ে দেওয়া হলো (Hardcoded)
+TELEGRAM_CHAT_ID = "-1004493539395" 
 
 SCAN_DURATION = 18000   # ৫ ঘণ্টা
 SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর পর স্ক্যান
@@ -40,7 +42,7 @@ def parse_curl(curl_string):
     return headers
 
 def send_telegram_message(text):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    if not TELEGRAM_BOT_TOKEN:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text} 
@@ -73,7 +75,7 @@ def grab_frame(stream_url):
     return frame if ret else None
 
 def send_telegram_photo(frame, caption, box_coords=None, keyword=None):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    if not TELEGRAM_BOT_TOKEN:
         return
 
     if box_coords and keyword:
@@ -99,7 +101,7 @@ def send_telegram_photo(frame, caption, box_coords=None, keyword=None):
     try:
         r = requests.post(url, data=payload, files=files, timeout=20)
         if r.status_code == 200:
-            print(f"[SENT] Photo -> OK", flush=True)
+            print(f"[SENT] Photo to Group -> OK", flush=True)
         else:
             print(f"[ERR] Telegram rejected photo! Reason: {r.text}", flush=True)
     except Exception as e:
@@ -128,7 +130,7 @@ def main():
     
     print(f"Target: {KICK_URL}", flush=True)
     
-    send_telegram_message(f"✅ Bot Started!\nCookie Status: {cookie_status}\nTracking has begun for 5 hours.")
+    send_telegram_message(f"✅ Bot Started in Group!\nCookie Status: {cookie_status}\nTracking has begun for 5 hours.")
     
     # ২ মিনিট কুলডাউনের গ্রুপ
     CENTER_KEYWORDS = [
