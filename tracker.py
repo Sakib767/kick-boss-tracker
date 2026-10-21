@@ -13,7 +13,7 @@ KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 KICK_CURL = os.environ.get("KICK_CURL", "") 
 
-# 👇 তোমার পার্সোনাল আইডি এবং গ্রুপের আইডি একসাথে বসানো হলো
+# পার্সোনাল এবং গ্রুপের Chat ID
 TELEGRAM_CHAT_IDS = [
     "8949091966",        # তোমার পার্সোনাল Chat ID
     "-1004493539395"     # গ্রুপের Chat ID
@@ -24,7 +24,7 @@ SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর �
 STATUS_CHECK_INTERVAL = 3600 # ১ ঘণ্টা পর পর শুধু টেক্সট স্ট্যাটাস
 
 # কুলডাউন টাইমার (সেকেন্ডে)
-CENTER_COOLDOWN = 120   # ২ মিনিট (শুধু "ENTER YOUR" এর জন্য)
+CENTER_COOLDOWN = 120   # ২ মিনিট (শুধু Stake.com Username এর জন্য)
 OTHER_COOLDOWN = 600    # ১০ মিনিট (বাকি সব কীওয়ার্ডের জন্য)
 
 def parse_curl(curl_string):
@@ -98,11 +98,9 @@ def send_telegram_photo(frame, caption, box_coords=None, keyword=None):
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     
-    # দুই জায়গায় ছবি পাঠানোর লুপ
     for chat_id in TELEGRAM_CHAT_IDS:
         photo_bytes = io.BytesIO(buffer)
         photo_bytes.seek(0)
-        
         payload = {"chat_id": chat_id, "caption": caption}
         files = {"photo": ("screenshot.jpg", photo_bytes, "image/jpeg")}
         
@@ -155,9 +153,11 @@ def main():
     
     print(f"Target: {KICK_URL}", flush=True)
     
-    send_telegram_message(f"✅ Bot Started!\nCookie Status: {cookie_status}\nSearching ONLY 'ENTER YOUR' in Center.")
+    send_telegram_message(f"✅ Bot Started!\nCookie Status: {cookie_status}\nSearching 'Stake.com username' in Center.")
     
-    CENTER_KEYWORD = "ENTER YOUR"
+    # 👇 শুধুমাত্র এই দুটো কীওয়ার্ড মাঝখানে খোঁজা হবে (২ মিনিট কুলডাউন)
+    # ডট (.) সহ এবং ছাড়া—দুটোই রাখা হলো যাতে OCR মিস না করে
+    CENTER_KEYWORDS = ["STAKE.COM USERNAME", "STAKE COM USERNAME"]
     
     try:
         with open("keywords.txt", "r") as f:
@@ -197,21 +197,24 @@ def main():
             h, w = frame.shape[:2]
             current_time = time.time()
             
-            # ১. মাঝখানের অংশ চেক (শুধুমাত্র "ENTER YOUR" এর জন্য)
+            # ১. মাঝখানের অংশ চেক (গিভঅ্যাওয়ে পপআপ)
             center_y1, center_y2 = int(h * 0.15), int(h * 0.65)
             center_x1, center_x2 = int(w * 0.25), int(w * 0.75)
             center_image = frame[center_y1:center_y2, center_x1:center_x2]
             
             center_text, center_words = process_ocr(center_image)
             
-            if CENTER_KEYWORD in center_text:
-                last_alert = last_alert_times.get(CENTER_KEYWORD, 0)
-                if current_time - last_alert >= CENTER_COOLDOWN:
-                    print(f"[{iteration}] 🚨 HIT (Center 2min): {CENTER_KEYWORD}", flush=True)
-                    match_box = find_keyword_box(CENTER_KEYWORD, center_words, offset_x=center_x1, offset_y=center_y1)
-                    caption = f"🚨 Kick Alert!\nDetected: {CENTER_KEYWORD}\nChannel: {KICK_URL}"
-                    send_telegram_photo(frame.copy(), caption, match_box, CENTER_KEYWORD) 
-                    last_alert_times[CENTER_KEYWORD] = current_time
+            # চেক করা হচ্ছে CENTER_KEYWORDS এর যেকোনো একটা আছে কিনা
+            for center_kw in CENTER_KEYWORDS:
+                if center_kw in center_text:
+                    last_alert = last_alert_times.get(center_kw, 0)
+                    if current_time - last_alert >= CENTER_COOLDOWN:
+                        print(f"[{iteration}] 🚨 HIT (Center): {center_kw}", flush=True)
+                        match_box = find_keyword_box(center_kw, center_words, offset_x=center_x1, offset_y=center_y1)
+                        caption = f"🚨 Kick Alert!\nDetected: {center_kw}\nChannel: {KICK_URL}"
+                        send_telegram_photo(frame.copy(), caption, match_box, center_kw) 
+                        last_alert_times[center_kw] = current_time
+                    break 
 
             # ২. বাকি স্ক্রিন চেক (keywords.txt এর জন্য)
             crop_w = int(w * 0.78) 
