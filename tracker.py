@@ -13,7 +13,7 @@ KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 KICK_CURL = os.environ.get("KICK_CURL", "") 
 
-# 👇 এখানে সরাসরি তোমার গ্রুপের Chat ID বসিয়ে দেওয়া হলো (Hardcoded)
+# সরাসরি গ্রুপের Chat ID (Hardcoded)
 TELEGRAM_CHAT_ID = "-1004493539395" 
 
 SCAN_DURATION = 18000   # ৫ ঘণ্টা
@@ -21,7 +21,7 @@ SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর �
 STATUS_CHECK_INTERVAL = 3600 # ১ ঘণ্টা পর পর শুধু টেক্সট স্ট্যাটাস
 
 # কুলডাউন টাইমার (সেকেন্ডে)
-CENTER_COOLDOWN = 120   # ২ মিনিট (PICK YOUR CARD এবং ENTER STAKE এর জন্য)
+CENTER_COOLDOWN = 120   # ২ মিনিট (শুধু "ENTER YOUR" এর জন্য)
 OTHER_COOLDOWN = 600    # ১০ মিনিট (বাকি সব কীওয়ার্ডের জন্য)
 
 def parse_curl(curl_string):
@@ -108,7 +108,8 @@ def send_telegram_photo(frame, caption, box_coords=None, keyword=None):
         print(f"[ERR] Photo failed: {e}", flush=True)
     time.sleep(2)
 
-def find_keyword_box(keyword, words_data):
+def find_keyword_box(keyword, words_data, offset_x=0, offset_y=0):
+    """OCR ডাটা থেকে কীওয়ার্ডের পজিশন বের করা এবং স্ক্রিনের আসল পজিশনে রূপান্তর করা"""
     kw_parts = keyword.split()
     for i in range(len(words_data)):
         match = True
@@ -117,12 +118,28 @@ def find_keyword_box(keyword, words_data):
                 match = False
                 break
         if match:
-            x_min = min(words_data[i+k]['left'] for k in range(len(kw_parts)))
-            y_min = min(words_data[i+k]['top'] for k in range(len(kw_parts)))
-            x_max = max(words_data[i+k]['left'] + words_data[i+k]['width'] for k in range(len(kw_parts)))
-            y_max = max(words_data[i+k]['top'] + words_data[i+k]['height'] for k in range(len(kw_parts)))
+            x_min = min(words_data[i+k]['left'] for k in range(len(kw_parts))) + offset_x
+            y_min = min(words_data[i+k]['top'] for k in range(len(kw_parts))) + offset_y
+            x_max = max(words_data[i+k]['left'] + words_data[i+k]['width'] for k in range(len(kw_parts))) + offset_x
+            y_max = max(words_data[i+k]['top'] + words_data[i+k]['height'] for k in range(len(kw_parts))) + offset_y
             return (x_min, y_min, x_max - x_min, y_max - y_min)
     return None
+
+def process_ocr(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
+    words_data = []
+    for i in range(len(data['text'])):
+        word = data['text'][i].strip().upper()
+        if word and int(data['conf'][i]) > 20:
+            words_data.append({
+                'text': word,
+                'left': data['left'][i],
+                'top': data['top'][i],
+                'width': data['width'][i],
+                'height': data['height'][i]
+            })
+    return " ".join([wd['text'] for wd in words_data]), words_data
 
 def main():
     headers = parse_curl(KICK_CURL)
@@ -130,24 +147,20 @@ def main():
     
     print(f"Target: {KICK_URL}", flush=True)
     
-    send_telegram_message(f"✅ Bot Started in Group!\nCookie Status: {cookie_status}\nTracking has begun for 5 hours.")
+    send_telegram_message(f"✅ Bot Started in Group!\nCookie Status: {cookie_status}\nSearching ONLY 'ENTER YOUR' in Center.")
     
-    # ২ মিনিট কুলডাউনের গ্রুপ
-    CENTER_KEYWORDS = [
-        "PICK YOUR CARD", 
-        "ENTER YOUR STAKE", 
-        "STAKE.COM USERNAME",
-        "STAKE COM USERNAME"
-    ]
+    # ২ মিনিট কুলডাউনের কীওয়ার্ড (শুধু মাঝখানে খুঁজবে)
+    CENTER_KEYWORD = "ENTER YOUR"
     
-    # ১০ মিনিট কুলডাউনের গ্রুপ (keywords.txt থেকে আসবে)
+    # ১০ মিনিট কুলডাউনের কীওয়ার্ড (keywords.txt থেকে আসবে)
     try:
         with open("keywords.txt", "r") as f:
             OTHER_KEYWORDS = [line.strip().upper() for line in f.readlines() if line.strip()]
     except FileNotFoundError:
         OTHER_KEYWORDS = ["BONUS BUY ($100)", "STAKE CASH $50", "$100 IN BTC", "$200 IN BTC", "STAKE CASH $100"]
         
-    OTHER_KEYWORDS = [kw for kw in OTHER_KEYWORDS if kw not in CENTER_KEYWORDS]
+    # PICK YOUR CARD কে লিস্ট থেকে মুছে ফেলা হলো
+    OTHER_KEYWORDS = [kw for kw in OTHER_KEYWORDS if "PICK YOUR CARD" not in kw]
 
     end_time = time.time() + SCAN_DURATION
     iteration = 0
@@ -177,52 +190,46 @@ def main():
                 continue
             
             h, w = frame.shape[:2]
-            crop_w = int(w * 0.78) 
-            game_area = frame[:, 0:crop_w] 
-            
-            gray = cv2.cvtColor(game_area, cv2.COLOR_BGR2GRAY)
-            data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
-            
-            words_data = []
-            for i in range(len(data['text'])):
-                word = data['text'][i].strip().upper()
-                if word and int(data['conf'][i]) > 20:
-                    words_data.append({
-                        'text': word,
-                        'left': data['left'][i],
-                        'top': data['top'][i],
-                        'width': data['width'][i],
-                        'height': data['height'][i]
-                    })
-            
-            full_text = " ".join([wd['text'] for wd in words_data])
             current_time = time.time()
             
-            # ১. সেন্ট্রাল পপআপ চেক (২ মিনিট কুলডাউন)
-            for kw in CENTER_KEYWORDS:
-                if kw in full_text:
-                    last_alert = last_alert_times.get(kw, 0)
-                    if current_time - last_alert >= CENTER_COOLDOWN: 
-                        print(f"[{iteration}] 🚨 HIT (2min): {kw}", flush=True)
-                        match_box = find_keyword_box(kw, words_data)
-                        caption = f"🚨 Kick Alert!\nDetected: {kw}\nChannel: {KICK_URL}"
-                        send_telegram_photo(frame.copy(), caption, match_box, kw) 
-                        last_alert_times[kw] = current_time
-                    break 
+            # ---------------------------------------------------------
+            # ১. মাঝখানের অংশ চেক (শুধুমাত্র "ENTER YOUR" এর জন্য)
+            # ---------------------------------------------------------
+            center_y1, center_y2 = int(h * 0.15), int(h * 0.65)
+            center_x1, center_x2 = int(w * 0.25), int(w * 0.75)
+            center_image = frame[center_y1:center_y2, center_x1:center_x2]
+            
+            center_text, center_words = process_ocr(center_image)
+            
+            if CENTER_KEYWORD in center_text:
+                last_alert = last_alert_times.get(CENTER_KEYWORD, 0)
+                if current_time - last_alert >= CENTER_COOLDOWN:
+                    print(f"[{iteration}] 🚨 HIT (Center 2min): {CENTER_KEYWORD}", flush=True)
+                    # অফসেট (offset) সহ বক্সের লোকেশন বের করা
+                    match_box = find_keyword_box(CENTER_KEYWORD, center_words, offset_x=center_x1, offset_y=center_y1)
+                    caption = f"🚨 Kick Alert!\nDetected: {CENTER_KEYWORD}\nChannel: {KICK_URL}"
+                    send_telegram_photo(frame.copy(), caption, match_box, CENTER_KEYWORD) 
+                    last_alert_times[CENTER_KEYWORD] = current_time
 
-            # ২. বাকি কীওয়ার্ড চেক (১০ মিনিট কুলডাউন)
+            # ---------------------------------------------------------
+            # ২. বাকি স্ক্রিন চেক (keywords.txt এর জন্য)
+            # ---------------------------------------------------------
+            crop_w = int(w * 0.78) # ডান দিকের চ্যাট বাদ
+            game_area = frame[:, 0:crop_w] 
+            game_text, game_words = process_ocr(game_area)
+            
             for kw in OTHER_KEYWORDS:
-                if kw in full_text:
+                if kw in game_text:
                     last_alert = last_alert_times.get(kw, 0)
                     if current_time - last_alert >= OTHER_COOLDOWN:
                         print(f"[{iteration}] 🚨 HIT (10min): {kw}", flush=True)
-                        match_box = find_keyword_box(kw, words_data)
+                        match_box = find_keyword_box(kw, game_words)
                         caption = f"🚨 Kick Alert!\nDetected: {kw}\nChannel: {KICK_URL}"
                         send_telegram_photo(frame.copy(), caption, match_box, kw) 
                         last_alert_times[kw] = current_time
                     break 
             
-            # ৩. ১ ঘণ্টা পর পর শুধু টেক্সট মেসেজ (কোনো ছবি নয়)
+            # ৩. ১ ঘণ্টা পর পর স্ট্যাটাস
             if current_time - last_status_time >= STATUS_CHECK_INTERVAL:
                 send_telegram_message(f"⏱️ Bot is alive & scanning.\nNo match in the last 1 hour.\nChannel: {KICK_URL}")
                 last_status_time = current_time
