@@ -13,8 +13,11 @@ KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 KICK_CURL = os.environ.get("KICK_CURL", "") 
 
-# সরাসরি গ্রুপের Chat ID (Hardcoded)
-TELEGRAM_CHAT_ID = "-1004493539395" 
+# 👇 তোমার পার্সোনাল আইডি এবং গ্রুপের আইডি একসাথে বসানো হলো
+TELEGRAM_CHAT_IDS = [
+    "8949091966",        # তোমার পার্সোনাল Chat ID
+    "-1004493539395"     # গ্রুপের Chat ID
+]
 
 SCAN_DURATION = 18000   # ৫ ঘণ্টা
 SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর পর স্ক্যান
@@ -45,11 +48,12 @@ def send_telegram_message(text):
     if not TELEGRAM_BOT_TOKEN:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text} 
-    try:
-        requests.post(url, json=payload, timeout=10)
-    except Exception as e:
-        print(f"[ERR] Message failed: {e}", flush=True)
+    for chat_id in TELEGRAM_CHAT_IDS:
+        payload = {"chat_id": chat_id, "text": text} 
+        try:
+            requests.post(url, json=payload, timeout=10)
+        except Exception as e:
+            print(f"[ERR] Message failed to {chat_id}: {e}", flush=True)
 
 def get_stream_url(headers):
     ydl_opts = {
@@ -91,25 +95,29 @@ def send_telegram_photo(frame, caption, box_coords=None, keyword=None):
 
     encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 100]
     _, buffer = cv2.imencode('.jpg', frame, encode_param)
-    photo_bytes = io.BytesIO(buffer)
-    photo_bytes.seek(0)
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "caption": caption}
-    files = {"photo": ("screenshot.jpg", photo_bytes, "image/jpeg")}
     
-    try:
-        r = requests.post(url, data=payload, files=files, timeout=20)
-        if r.status_code == 200:
-            print(f"[SENT] Photo to Group -> OK", flush=True)
-        else:
-            print(f"[ERR] Telegram rejected photo! Reason: {r.text}", flush=True)
-    except Exception as e:
-        print(f"[ERR] Photo failed: {e}", flush=True)
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    
+    # দুই জায়গায় ছবি পাঠানোর লুপ
+    for chat_id in TELEGRAM_CHAT_IDS:
+        photo_bytes = io.BytesIO(buffer)
+        photo_bytes.seek(0)
+        
+        payload = {"chat_id": chat_id, "caption": caption}
+        files = {"photo": ("screenshot.jpg", photo_bytes, "image/jpeg")}
+        
+        try:
+            r = requests.post(url, data=payload, files=files, timeout=20)
+            if r.status_code == 200:
+                print(f"[SENT] Photo to {chat_id} -> OK", flush=True)
+            else:
+                print(f"[ERR] Telegram rejected photo to {chat_id}! Reason: {r.text}", flush=True)
+        except Exception as e:
+            print(f"[ERR] Photo failed to {chat_id}: {e}", flush=True)
+            
     time.sleep(2)
 
 def find_keyword_box(keyword, words_data, offset_x=0, offset_y=0):
-    """OCR ডাটা থেকে কীওয়ার্ডের পজিশন বের করা এবং স্ক্রিনের আসল পজিশনে রূপান্তর করা"""
     kw_parts = keyword.split()
     for i in range(len(words_data)):
         match = True
@@ -147,19 +155,16 @@ def main():
     
     print(f"Target: {KICK_URL}", flush=True)
     
-    send_telegram_message(f"✅ Bot Started in Group!\nCookie Status: {cookie_status}\nSearching ONLY 'ENTER YOUR' in Center.")
+    send_telegram_message(f"✅ Bot Started!\nCookie Status: {cookie_status}\nSearching ONLY 'ENTER YOUR' in Center.")
     
-    # ২ মিনিট কুলডাউনের কীওয়ার্ড (শুধু মাঝখানে খুঁজবে)
     CENTER_KEYWORD = "ENTER YOUR"
     
-    # ১০ মিনিট কুলডাউনের কীওয়ার্ড (keywords.txt থেকে আসবে)
     try:
         with open("keywords.txt", "r") as f:
             OTHER_KEYWORDS = [line.strip().upper() for line in f.readlines() if line.strip()]
     except FileNotFoundError:
         OTHER_KEYWORDS = ["BONUS BUY ($100)", "STAKE CASH $50", "$100 IN BTC", "$200 IN BTC", "STAKE CASH $100"]
         
-    # PICK YOUR CARD কে লিস্ট থেকে মুছে ফেলা হলো
     OTHER_KEYWORDS = [kw for kw in OTHER_KEYWORDS if "PICK YOUR CARD" not in kw]
 
     end_time = time.time() + SCAN_DURATION
@@ -192,9 +197,7 @@ def main():
             h, w = frame.shape[:2]
             current_time = time.time()
             
-            # ---------------------------------------------------------
             # ১. মাঝখানের অংশ চেক (শুধুমাত্র "ENTER YOUR" এর জন্য)
-            # ---------------------------------------------------------
             center_y1, center_y2 = int(h * 0.15), int(h * 0.65)
             center_x1, center_x2 = int(w * 0.25), int(w * 0.75)
             center_image = frame[center_y1:center_y2, center_x1:center_x2]
@@ -205,16 +208,13 @@ def main():
                 last_alert = last_alert_times.get(CENTER_KEYWORD, 0)
                 if current_time - last_alert >= CENTER_COOLDOWN:
                     print(f"[{iteration}] 🚨 HIT (Center 2min): {CENTER_KEYWORD}", flush=True)
-                    # অফসেট (offset) সহ বক্সের লোকেশন বের করা
                     match_box = find_keyword_box(CENTER_KEYWORD, center_words, offset_x=center_x1, offset_y=center_y1)
                     caption = f"🚨 Kick Alert!\nDetected: {CENTER_KEYWORD}\nChannel: {KICK_URL}"
                     send_telegram_photo(frame.copy(), caption, match_box, CENTER_KEYWORD) 
                     last_alert_times[CENTER_KEYWORD] = current_time
 
-            # ---------------------------------------------------------
             # ২. বাকি স্ক্রিন চেক (keywords.txt এর জন্য)
-            # ---------------------------------------------------------
-            crop_w = int(w * 0.78) # ডান দিকের চ্যাট বাদ
+            crop_w = int(w * 0.78) 
             game_area = frame[:, 0:crop_w] 
             game_text, game_words = process_ocr(game_area)
             
