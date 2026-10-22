@@ -6,6 +6,3 @@ $100 Stake Cash
 $200 Stake Cash
 $50 in BTC
 $100 Bonus Buy
-Bonus Buy
-Stake Cash
-in BTC
