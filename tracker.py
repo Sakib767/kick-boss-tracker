@@ -22,9 +22,7 @@ TELEGRAM_CHAT_IDS = [
 SCAN_DURATION = 18000   # ৫ ঘণ্টা
 SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর পর স্ক্যান
 HEARTBEAT_INTERVAL = 1800 # প্রতি ৩০ মিনিট পর পর স্ট্যাটাস ছবি
-
-# সেন্টারের জন্য টাইমার (২ মিনিট)
-CENTER_COOLDOWN = 120   
+CENTER_COOLDOWN = 120   # ২ মিনিট
 
 def parse_curl(curl_string):
     headers = {}
@@ -200,9 +198,7 @@ def main():
             center_image = frame[center_y1:center_y2, center_x1:center_x2]
             center_text, center_words = process_ocr(center_image)
             
-            center_match_found = False
             if "ENTER" in center_text and "YOUR" in center_text and "STAKE" in center_text and "USERNAME" in center_text:
-                center_match_found = True
                 if current_time - last_center_alert_time >= CENTER_COOLDOWN:
                     print(f"[{iteration}] 🚨 HIT (Center 2min): ENTER YOUR STAKE USERNAME", flush=True)
                     match_box = find_keyword_box("ENTER", center_words, offset_x=center_x1, offset_y=center_y1)
@@ -211,11 +207,15 @@ def main():
                     last_center_alert_time = current_time
 
             # ---------------------------------------------------------
-            # ২. বাকি স্ক্রিন চেক (keywords.txt) - শুধুমাত্র বাঁ দিকের ২৮% এরিয়া
+            # ২. বাঁ দিকের নিচের অংশ চেক (keywords.txt) - মেমোরি ভিত্তিক
             # ---------------------------------------------------------
-            # 👇 এখানে এরিয়াটা ছোট করে শুধু বাঁ দিক (২৮%) করা হলো
-            side_x2 = int(w * 0.28)
-            game_area = frame[:, 0:side_x2] 
+            # 👇 শুধুমাত্র বাঁ দিকের নিচের ৩৫% এরিয়া (যেখানে আসল গিভঅ্যাওয়ে বক্স আসে)
+            side_y1 = int(h * 0.65) 
+            side_y2 = h
+            side_x1 = 0
+            side_x2 = int(w * 0.35) 
+            
+            game_area = frame[side_y1:side_y2, side_x1:side_x2] 
             game_text, game_words = process_ocr(game_area)
             
             current_side_keyword = ""
@@ -224,7 +224,7 @@ def main():
             for kw in OTHER_KEYWORDS:
                 if kw in game_text:
                     current_side_keyword = kw
-                    current_side_box = find_keyword_box(kw, game_words)
+                    current_side_box = find_keyword_box(kw, game_words, offset_x=side_x1, offset_y=side_y1)
                     break 
             
             if current_side_keyword and current_side_keyword != last_side_keyword:
