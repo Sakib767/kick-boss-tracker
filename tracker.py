@@ -207,16 +207,20 @@ def main():
                     last_center_alert_time = current_time
 
             # ---------------------------------------------------------
-            # ২. বাঁ দিকের নিচের অংশ চেক (keywords.txt) - মেমোরি ভিত্তিক
+            # ২. বাঁ দিকের অংশ চেক (keywords.txt) - মেমোরি ভিত্তিক
             # ---------------------------------------------------------
-            # 👇 শুধুমাত্র বাঁ দিকের নিচের ৩৫% এরিয়া (যেখানে আসল গিভঅ্যাওয়ে বক্স আসে)
-            side_y1 = int(h * 0.65) 
-            side_y2 = h
+            # 👇 এরিয়াটা একটু বাড়িয়ে নিচ্ছি (উপরের দিক থেকে ৪৫% এবং ডান দিক থেকে ৩৫%)
+            side_y1 = int(h * 0.45) 
+            side_y2 = int(h * 0.90) # একদম নিচের বার বাদ দিলাম
             side_x1 = 0
             side_x2 = int(w * 0.35) 
             
             game_area = frame[side_y1:side_y2, side_x1:side_x2] 
             game_text, game_words = process_ocr(game_area)
+            
+            # 👇 ডিবাগ লগ: বট কী পড়ছে তা দেখার জন্য
+            safe_side = game_text[:60]
+            print(f"[{iteration}] Side OCR: {safe_side}...", flush=True)
             
             current_side_keyword = ""
             current_side_box = None
