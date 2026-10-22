@@ -21,7 +21,7 @@ TELEGRAM_CHAT_IDS = [
 
 SCAN_DURATION = 18000   # ৫ ঘণ্টা
 SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর পর স্ক্যান
-HEARTBEAT_INTERVAL = 1800 # 👈 প্রতি ৩০ মিনিট (১৮০০ সেকেন্ড) পর পর প্রুফ ছবি
+HEARTBEAT_INTERVAL = 1800 # প্রতি ৩০ মিনিট পর পর স্ট্যাটাস ছবি
 
 # সেন্টারের জন্য টাইমার (২ মিনিট)
 CENTER_COOLDOWN = 120   
@@ -166,10 +166,7 @@ def main():
     stream_url = None
     last_heartbeat_time = time.time()
     
-    # সেন্টারের জন্য আলাদা টাইমার
     last_center_alert_time = 0
-    
-    # সাইডের জন্য আলাদা মেমোরি
     last_side_keyword = ""
 
     print(f"Starting 5-hour Scan Loop...", flush=True)
@@ -203,7 +200,9 @@ def main():
             center_image = frame[center_y1:center_y2, center_x1:center_x2]
             center_text, center_words = process_ocr(center_image)
             
+            center_match_found = False
             if "ENTER" in center_text and "YOUR" in center_text and "STAKE" in center_text and "USERNAME" in center_text:
+                center_match_found = True
                 if current_time - last_center_alert_time >= CENTER_COOLDOWN:
                     print(f"[{iteration}] 🚨 HIT (Center 2min): ENTER YOUR STAKE USERNAME", flush=True)
                     match_box = find_keyword_box("ENTER", center_words, offset_x=center_x1, offset_y=center_y1)
@@ -212,33 +211,29 @@ def main():
                     last_center_alert_time = current_time
 
             # ---------------------------------------------------------
-            # ২. বাকি স্ক্রিন চেক (keywords.txt) - মেমোরি ভিত্তিক
+            # ২. বাকি স্ক্রিন চেক (keywords.txt) - শুধুমাত্র বাঁ দিকের ২৮% এরিয়া
             # ---------------------------------------------------------
-            crop_w = int(w * 0.78) 
-            game_area = frame[:, 0:crop_w] 
+            # 👇 এখানে এরিয়াটা ছোট করে শুধু বাঁ দিক (২৮%) করা হলো
+            side_x2 = int(w * 0.28)
+            game_area = frame[:, 0:side_x2] 
             game_text, game_words = process_ocr(game_area)
             
             current_side_keyword = ""
             current_side_box = None
             
-            # স্ক্রিনে বর্তমানে কোন কীওয়ার্ড আছে তা খোঁজা
             for kw in OTHER_KEYWORDS:
                 if kw in game_text:
                     current_side_keyword = kw
                     current_side_box = find_keyword_box(kw, game_words)
                     break 
             
-            # যদি নতুন কিছু পাওয়া যায়, কিন্তু সেটা আগেরটার মতো না হয়
             if current_side_keyword and current_side_keyword != last_side_keyword:
                 print(f"[{iteration}] 🚨 NEW SIDE HIT: {current_side_keyword}", flush=True)
                 caption = f"🚨 Kick Alert!\nDetected: {current_side_keyword}\nChannel: {KICK_URL}"
                 send_telegram_photo(frame.copy(), caption, current_side_box, current_side_keyword) 
-                
-                # মেমোরি আপডেট করে দিলাম
                 last_side_keyword = current_side_keyword
 
             elif current_side_keyword and current_side_keyword == last_side_keyword:
-                # যদি একই জিনিস আবার দেখে, তবে চুপচাপ থাকবে
                 print(f"[{iteration}] ⏭️ Skipping same side keyword: {current_side_keyword}", flush=True)
             
             # ---------------------------------------------------------
