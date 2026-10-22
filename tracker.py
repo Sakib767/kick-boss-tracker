@@ -21,10 +21,10 @@ TELEGRAM_CHAT_IDS = [
 
 SCAN_DURATION = 18000   # ৫ ঘণ্টা
 SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর পর স্ক্যান
-HEARTBEAT_INTERVAL = 600 # 👈 প্রতি ১০ মিনিট (৬০০ সেকেন্ড) পর পর স্ট্যাটাস ছবি
+HEARTBEAT_INTERVAL = 1800 # 👈 প্রতি ৩০ মিনিট (১৮০০ সেকেন্ড) পর পর প্রুফ ছবি
 
-CENTER_COOLDOWN = 120   # ২ মিনিট (শুধু Stake.com Username এর জন্য)
-OTHER_COOLDOWN = 600    # ১০ মিনিট (বাকি সব কীওয়ার্ডের জন্য)
+# সেন্টারের জন্য টাইমার (২ মিনিট)
+CENTER_COOLDOWN = 120   
 
 def parse_curl(curl_string):
     headers = {}
@@ -157,15 +157,20 @@ def main():
         with open("keywords.txt", "r") as f:
             OTHER_KEYWORDS = [line.strip().upper() for line in f.readlines() if line.strip()]
     except FileNotFoundError:
-        OTHER_KEYWORDS = ["BONUS BUY ($100)", "STAKE CASH $50", "$100 IN BTC", "$200 IN BTC", "STAKE CASH $100"]
+        OTHER_KEYWORDS = ["BONUS BUY", "STAKE CASH", "BTC"]
         
     OTHER_KEYWORDS = [kw for kw in OTHER_KEYWORDS if "PICK YOUR CARD" not in kw]
 
     end_time = time.time() + SCAN_DURATION
     iteration = 0
     stream_url = None
-    last_heartbeat_time = time.time() # 👈 টাইমার শুরু হলো
-    last_alert_times = {} 
+    last_heartbeat_time = time.time()
+    
+    # সেন্টারের জন্য আলাদা টাইমার
+    last_center_alert_time = 0
+    
+    # সাইডের জন্য আলাদা মেমোরি
+    last_side_keyword = ""
 
     print(f"Starting 5-hour Scan Loop...", flush=True)
     
@@ -190,57 +195,58 @@ def main():
             h, w = frame.shape[:2]
             current_time = time.time()
             
-            # ১. মাঝখানের অংশ চেক (গিভঅ্যাওয়ে পপআপ)
+            # ---------------------------------------------------------
+            # ১. মাঝখানের অংশ চেক (ENTER YOUR STAKE USERNAME) - ২ মিনিট টাইমার
+            # ---------------------------------------------------------
             center_y1, center_y2 = int(h * 0.15), int(h * 0.65)
             center_x1, center_x2 = int(w * 0.25), int(w * 0.75)
             center_image = frame[center_y1:center_y2, center_x1:center_x2]
-            
             center_text, center_words = process_ocr(center_image)
             
-            safe_center = center_text[:50]
-            print(f"[{iteration}] Center OCR: {safe_center}...", flush=True)
-            
-            center_match = False
-            match_text = ""
-            if "STAKE" in center_text and "USERNAME" in center_text:
-                center_match = True
-                match_text = "STAKE USERNAME"
-            elif "STAKE.COM" in center_text:
-                center_match = True
-                match_text = "STAKE.COM"
+            if "ENTER" in center_text and "YOUR" in center_text and "STAKE" in center_text and "USERNAME" in center_text:
+                if current_time - last_center_alert_time >= CENTER_COOLDOWN:
+                    print(f"[{iteration}] 🚨 HIT (Center 2min): ENTER YOUR STAKE USERNAME", flush=True)
+                    match_box = find_keyword_box("ENTER", center_words, offset_x=center_x1, offset_y=center_y1)
+                    caption = f"🚨 Kick Alert!\nDetected: ENTER YOUR STAKE USERNAME\nChannel: {KICK_URL}"
+                    send_telegram_photo(frame.copy(), caption, match_box, "ENTER YOUR STAKE USERNAME") 
+                    last_center_alert_time = current_time
 
-            if center_match:
-                last_alert = last_alert_times.get("CENTER", 0)
-                if current_time - last_alert >= CENTER_COOLDOWN:
-                    print(f"[{iteration}] 🚨 HIT (Center): {match_text}", flush=True)
-                    match_box = find_keyword_box("STAKE", center_words, offset_x=center_x1, offset_y=center_y1)
-                    if not match_box:
-                        match_box = find_keyword_box("STAKE.COM", center_words, offset_x=center_x1, offset_y=center_y1)
-                        
-                    caption = f"🚨 Kick Alert!\nDetected: {match_text}\nChannel: {KICK_URL}"
-                    send_telegram_photo(frame.copy(), caption, match_box, match_text) 
-                    last_alert_times["CENTER"] = current_time
-
-            # ২. বাকি স্ক্রিন চেক (keywords.txt এর জন্য)
+            # ---------------------------------------------------------
+            # ২. বাকি স্ক্রিন চেক (keywords.txt) - মেমোরি ভিত্তিক
+            # ---------------------------------------------------------
             crop_w = int(w * 0.78) 
             game_area = frame[:, 0:crop_w] 
             game_text, game_words = process_ocr(game_area)
             
+            current_side_keyword = ""
+            current_side_box = None
+            
+            # স্ক্রিনে বর্তমানে কোন কীওয়ার্ড আছে তা খোঁজা
             for kw in OTHER_KEYWORDS:
                 if kw in game_text:
-                    last_alert = last_alert_times.get(kw, 0)
-                    if current_time - last_alert >= OTHER_COOLDOWN:
-                        print(f"[{iteration}] 🚨 HIT (10min): {kw}", flush=True)
-                        match_box = find_keyword_box(kw, game_words)
-                        caption = f"🚨 Kick Alert!\nDetected: {kw}\nChannel: {KICK_URL}"
-                        send_telegram_photo(frame.copy(), caption, match_box, kw) 
-                        last_alert_times[kw] = current_time
+                    current_side_keyword = kw
+                    current_side_box = find_keyword_box(kw, game_words)
                     break 
             
-            # ৩. ১০ মিনিট পর পর স্ট্যাটাস ছবি (Heartbeat)
+            # যদি নতুন কিছু পাওয়া যায়, কিন্তু সেটা আগেরটার মতো না হয়
+            if current_side_keyword and current_side_keyword != last_side_keyword:
+                print(f"[{iteration}] 🚨 NEW SIDE HIT: {current_side_keyword}", flush=True)
+                caption = f"🚨 Kick Alert!\nDetected: {current_side_keyword}\nChannel: {KICK_URL}"
+                send_telegram_photo(frame.copy(), caption, current_side_box, current_side_keyword) 
+                
+                # মেমোরি আপডেট করে দিলাম
+                last_side_keyword = current_side_keyword
+
+            elif current_side_keyword and current_side_keyword == last_side_keyword:
+                # যদি একই জিনিস আবার দেখে, তবে চুপচাপ থাকবে
+                print(f"[{iteration}] ⏭️ Skipping same side keyword: {current_side_keyword}", flush=True)
+            
+            # ---------------------------------------------------------
+            # ৩. ৩০ মিনিট পর পর স্ট্যাটাস ছবি (Heartbeat)
+            # ---------------------------------------------------------
             if current_time - last_heartbeat_time >= HEARTBEAT_INTERVAL:
-                print(f"[{iteration}] ⏱️ Sending 10-min heartbeat screenshot...", flush=True)
-                caption = f"⏱️ Status Update (10 min)\nScanning... No new match yet.\nChannel: {KICK_URL}"
+                print(f"[{iteration}] ⏱️ Sending 30-min heartbeat screenshot...", flush=True)
+                caption = f"⏱️ Status Update (30 min)\nScanning...\nLast Side Match: {last_side_keyword if last_side_keyword else 'None'}\nChannel: {KICK_URL}"
                 send_telegram_photo(frame.copy(), caption)
                 last_heartbeat_time = current_time
             
