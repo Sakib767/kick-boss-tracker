@@ -23,7 +23,6 @@ SCAN_DURATION = 18000   # ৫ ঘণ্টা
 SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর পর স্ক্যান
 STATUS_CHECK_INTERVAL = 3600 # ১ ঘণ্টা পর পর শুধু টেক্সট স্ট্যাটাস
 
-# কুলডাউন টাইমার (সেকেন্ডে)
 CENTER_COOLDOWN = 120   # ২ মিনিট (শুধু Stake.com Username এর জন্য)
 OTHER_COOLDOWN = 600    # ১০ মিনিট (বাকি সব কীওয়ার্ডের জন্য)
 
@@ -153,10 +152,9 @@ def main():
     
     print(f"Target: {KICK_URL}", flush=True)
     
-    send_telegram_message(f"✅ Bot Started!\nCookie Status: {cookie_status}\nSearching 'Stake.com username' in Center.")
+    # 👇 এখানে স্টার্টআপ মেসেজটা একদম ছোট করে দেওয়া হলো
+    send_telegram_message(f"✅ Bot Started!\nStatus: {cookie_status}")
     
-    # 👇 শুধুমাত্র এই দুটো কীওয়ার্ড মাঝখানে খোঁজা হবে (২ মিনিট কুলডাউন)
-    # ডট (.) সহ এবং ছাড়া—দুটোই রাখা হলো যাতে OCR মিস না করে
     CENTER_KEYWORDS = ["STAKE.COM USERNAME", "STAKE COM USERNAME"]
     
     try:
@@ -204,7 +202,6 @@ def main():
             
             center_text, center_words = process_ocr(center_image)
             
-            # চেক করা হচ্ছে CENTER_KEYWORDS এর যেকোনো একটা আছে কিনা
             for center_kw in CENTER_KEYWORDS:
                 if center_kw in center_text:
                     last_alert = last_alert_times.get(center_kw, 0)
