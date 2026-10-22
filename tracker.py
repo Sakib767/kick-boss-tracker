@@ -21,7 +21,7 @@ TELEGRAM_CHAT_IDS = [
 
 SCAN_DURATION = 18000   # ৫ ঘণ্টা
 SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর পর স্ক্যান
-STATUS_CHECK_INTERVAL = 3600 # ১ ঘণ্টা পর পর শুধু টেক্সট স্ট্যাটাস
+HEARTBEAT_INTERVAL = 600 # 👈 প্রতি ১০ মিনিট (৬০০ সেকেন্ড) পর পর স্ট্যাটাস ছবি
 
 CENTER_COOLDOWN = 120   # ২ মিনিট (শুধু Stake.com Username এর জন্য)
 OTHER_COOLDOWN = 600    # ১০ মিনিট (বাকি সব কীওয়ার্ডের জন্য)
@@ -151,11 +151,7 @@ def main():
     cookie_status = "Loaded" if "Cookie" in headers else "Not Found (Guest)"
     
     print(f"Target: {KICK_URL}", flush=True)
-    
-    # 👇 এখানে স্টার্টআপ মেসেজটা একদম ছোট করে দেওয়া হলো
     send_telegram_message(f"✅ Bot Started!\nStatus: {cookie_status}")
-    
-    CENTER_KEYWORDS = ["STAKE.COM USERNAME", "STAKE COM USERNAME"]
     
     try:
         with open("keywords.txt", "r") as f:
@@ -168,8 +164,7 @@ def main():
     end_time = time.time() + SCAN_DURATION
     iteration = 0
     stream_url = None
-    last_status_time = time.time()
-    
+    last_heartbeat_time = time.time() # 👈 টাইমার শুরু হলো
     last_alert_times = {} 
 
     print(f"Starting 5-hour Scan Loop...", flush=True)
@@ -202,16 +197,29 @@ def main():
             
             center_text, center_words = process_ocr(center_image)
             
-            for center_kw in CENTER_KEYWORDS:
-                if center_kw in center_text:
-                    last_alert = last_alert_times.get(center_kw, 0)
-                    if current_time - last_alert >= CENTER_COOLDOWN:
-                        print(f"[{iteration}] 🚨 HIT (Center): {center_kw}", flush=True)
-                        match_box = find_keyword_box(center_kw, center_words, offset_x=center_x1, offset_y=center_y1)
-                        caption = f"🚨 Kick Alert!\nDetected: {center_kw}\nChannel: {KICK_URL}"
-                        send_telegram_photo(frame.copy(), caption, match_box, center_kw) 
-                        last_alert_times[center_kw] = current_time
-                    break 
+            safe_center = center_text[:50]
+            print(f"[{iteration}] Center OCR: {safe_center}...", flush=True)
+            
+            center_match = False
+            match_text = ""
+            if "STAKE" in center_text and "USERNAME" in center_text:
+                center_match = True
+                match_text = "STAKE USERNAME"
+            elif "STAKE.COM" in center_text:
+                center_match = True
+                match_text = "STAKE.COM"
+
+            if center_match:
+                last_alert = last_alert_times.get("CENTER", 0)
+                if current_time - last_alert >= CENTER_COOLDOWN:
+                    print(f"[{iteration}] 🚨 HIT (Center): {match_text}", flush=True)
+                    match_box = find_keyword_box("STAKE", center_words, offset_x=center_x1, offset_y=center_y1)
+                    if not match_box:
+                        match_box = find_keyword_box("STAKE.COM", center_words, offset_x=center_x1, offset_y=center_y1)
+                        
+                    caption = f"🚨 Kick Alert!\nDetected: {match_text}\nChannel: {KICK_URL}"
+                    send_telegram_photo(frame.copy(), caption, match_box, match_text) 
+                    last_alert_times["CENTER"] = current_time
 
             # ২. বাকি স্ক্রিন চেক (keywords.txt এর জন্য)
             crop_w = int(w * 0.78) 
@@ -229,10 +237,12 @@ def main():
                         last_alert_times[kw] = current_time
                     break 
             
-            # ৩. ১ ঘণ্টা পর পর স্ট্যাটাস
-            if current_time - last_status_time >= STATUS_CHECK_INTERVAL:
-                send_telegram_message(f"⏱️ Bot is alive & scanning.\nNo match in the last 1 hour.\nChannel: {KICK_URL}")
-                last_status_time = current_time
+            # ৩. ১০ মিনিট পর পর স্ট্যাটাস ছবি (Heartbeat)
+            if current_time - last_heartbeat_time >= HEARTBEAT_INTERVAL:
+                print(f"[{iteration}] ⏱️ Sending 10-min heartbeat screenshot...", flush=True)
+                caption = f"⏱️ Status Update (10 min)\nScanning... No new match yet.\nChannel: {KICK_URL}"
+                send_telegram_photo(frame.copy(), caption)
+                last_heartbeat_time = current_time
             
         except Exception as e:
             print(f"[{iteration}] Error: {e}", flush=True)
