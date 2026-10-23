@@ -1,16 +1,22 @@
 name: Kick Visual Scan
 
 on:
-  workflow_dispatch:      # শুধুমাত্র ম্যানুয়ালি রান করার জন্য
+  schedule:
+    - cron: "0 */5 * * *"   # 👈 প্রতি ৫ ঘণ্টায় একবার অটোমেটিক চালু হবে
+  workflow_dispatch:        # ম্যানুয়ালি রান করার অপশনও থাকবে
+
+# নতুন রান শুরু হলে পুরনো রান বাতিল হবে (যাতে একসাথে দুটো না চলে)
+concurrency:
+  group: "kick-tracker"
+  cancel-in-progress: true  
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 330   # ৫ ঘণ্টার জন্য ৫.৫ ঘণ্টা (৩৩০ মিনিট) সময়
+    timeout-minutes: 330   
     steps:
       - uses: actions/checkout@v4
 
-      # 👇 ১. সিস্টেম প্যাকেজের জন্য ক্যাশ (FFmpeg, Tesseract ইত্যাদি)
       - name: Cache apt packages
         uses: actions/cache@v4
         with:
@@ -23,7 +29,6 @@ jobs:
         with:
           python-version: "3.11"
 
-      # 👇 ২. পাইথন প্যাকেজের জন্য ক্যাশ (opencv, yt-dlp ইত্যাদি)
       - name: Cache pip packages
         uses: actions/cache@v4
         with:
