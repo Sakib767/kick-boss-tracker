@@ -24,6 +24,10 @@ SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর �
 HEARTBEAT_INTERVAL = 1800 # প্রতি ৩০ মিনিট পর পর স্ট্যাটাস ছবি
 CENTER_COOLDOWN = 120   # ২ মিনিট
 
+# 👇 ডিবাগ মোড (True করলে টেলিগ্রামে স্ক্রিনশট এবং টেক্সট পাঠাবে)
+DEBUG_MODE = True 
+last_debug_time = 0
+
 def parse_curl(curl_string):
     headers = {}
     if not curl_string:
@@ -128,28 +132,63 @@ def find_keyword_box(keyword, words_data, offset_x=0, offset_y=0):
             return (x_min, y_min, x_max - x_min, y_max - y_min)
     return None
 
-def process_ocr(image):
+# 👇 মাঝখানের (Center) জন্য আপডেট করা OCR ফাংশন
+def process_center_ocr(image):
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    
+    # সাদা রঙের লেখা আলাদা করা (Saturation কম, Value বেশি)
+    lower_white = (0, 0, 180)
+    upper_white = (180, 50, 255)
+    mask = cv2.inRange(hsv, lower_white, upper_white)
+    
+    # রঙ উল্টে দেওয়া (সাদা লেখা কালো হবে)
+    mask = cv2.bitwise_not(mask)
+    
+    # ছবি বড় করা
+    mask = cv2.resize(mask, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+    
+    text = pytesseract.image_to_string(mask, config='--psm 6').upper()
+    
+    data = pytesseract.image_to_data(mask, output_type=pytesseract.Output.DICT)
+    words_data = []
+    for i in range(len(data['text'])):
+        word = data['text'][i].strip().upper()
+        if word and int(data['conf'][i]) > 10:
+            words_data.append({
+                'text': word,
+                'left': int(data['left'][i] / 3.0),
+                'top': int(data['top'][i] / 3.0),
+                'width': int(data['width'][i] / 3.0),
+                'height': int(data['height'][i] / 3.0)
+            })
+    return text, words_data, mask
+
+# 👇 সাইডের (Side) জন্য আগের মতোই OCR ফাংশন
+def process_side_ocr(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
     data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
     words_data = []
     for i in range(len(data['text'])):
         word = data['text'][i].strip().upper()
-        if word and int(data['conf'][i]) > 20:
+        if word and int(data['conf'][i]) > 15:
             words_data.append({
                 'text': word,
-                'left': data['left'][i],
-                'top': data['top'][i],
-                'width': data['width'][i],
-                'height': data['height'][i]
+                'left': int(data['left'][i] / 2.0),
+                'top': int(data['top'][i] / 2.0),
+                'width': int(data['width'][i] / 2.0),
+                'height': int(data['height'][i] / 2.0)
             })
     return " ".join([wd['text'] for wd in words_data]), words_data
 
 def main():
+    global last_debug_time
+    
     headers = parse_curl(KICK_CURL)
     cookie_status = "Loaded" if "Cookie" in headers else "Not Found (Guest)"
     
     print(f"Target: {KICK_URL}", flush=True)
-    send_telegram_message(f"✅ Bot Started!\nStatus: {cookie_status}")
+    send_telegram_message(f"✅ Bot Started!\nStatus: {cookie_status}\nDebug Mode: {DEBUG_MODE}")
     
     try:
         with open("keywords.txt", "r") as f:
@@ -191,34 +230,67 @@ def main():
             current_time = time.time()
             
             # ---------------------------------------------------------
-            # ১. মাঝখানের অংশ চেক (ENTER YOUR STAKE USERNAME) - ২ মিনিট টাইমার
+            # ১. মাঝখানের অংশ চেক (ENTER YOUR STAKE USERNAME)
             # ---------------------------------------------------------
-            center_y1, center_y2 = int(h * 0.15), int(h * 0.65)
-            center_x1, center_x2 = int(w * 0.25), int(w * 0.75)
+            center_y1, center_y2 = int(h * 0.20), int(h * 0.60)
+            center_x1, center_x2 = int(w * 0.28), int(w * 0.72)
             center_image = frame[center_y1:center_y2, center_x1:center_x2]
-            center_text, center_words = process_ocr(center_image)
             
-            if "ENTER" in center_text and "YOUR" in center_text and "STAKE" in center_text and "USERNAME" in center_text:
+            center_text, center_words, mask_image = process_center_ocr(center_image)
+            
+            safe_center = center_text.replace('\n', ' ')[:60]
+            print(f"[{iteration}] Center OCR: {safe_center}...", flush=True)
+            
+            # ৪টি শব্দের কঠোর শর্ত (OCR ভুল ধরার ভ্যারিয়েশনসহ)
+            has_enter = "ENTER" in center_text or "ENT" in center_text
+            has_your = "YOUR" in center_text or "YUR" in center_text or "Y0UR" in center_text or "YOU" in center_text
+            has_stake = "STAKE" in center_text or "5TAKE" in center_text or "STAKE.COM" in center_text
+            has_username = "USERNAME" in center_text or "USERNANE" in center_text or "USER" in center_text
+
+            if has_enter and has_your and has_stake and has_username:
                 if current_time - last_center_alert_time >= CENTER_COOLDOWN:
-                    print(f"[{iteration}] 🚨 HIT (Center 2min): ENTER YOUR STAKE USERNAME", flush=True)
+                    print(f"[{iteration}] 🚨 HIT (Center): ENTER YOUR STAKE USERNAME", flush=True)
                     match_box = find_keyword_box("ENTER", center_words, offset_x=center_x1, offset_y=center_y1)
+                    if not match_box:
+                        match_box = find_keyword_box("STAKE", center_words, offset_x=center_x1, offset_y=center_y1)
+                    
                     caption = f"🚨 Kick Alert!\nDetected: ENTER YOUR STAKE USERNAME\nChannel: {KICK_URL}"
                     send_telegram_photo(frame.copy(), caption, match_box, "ENTER YOUR STAKE USERNAME") 
                     last_center_alert_time = current_time
+            else:
+                # 👇 ডিবাগ মোড (যদি ৪টি শব্দ না পায়, কিন্তু STAKE বা ENTER দেখে, তবে ১ মিনিট পর পর মেসেজ দেবে)
+                if DEBUG_MODE and (has_stake or has_enter):
+                    if current_time - last_debug_time >= 60: 
+                        print(f"[{iteration}] 🔍 DEBUG: Center text didn't match 4 words.", flush=True)
+                        debug_caption = f"🔍 **DEBUG MODE**\nBot Read: `{center_text[:100]}`\n\nMissing words: ENTER={has_enter}, YOUR={has_your}, STAKE={has_stake}, USER={has_username}"
+                        
+                        # মাঝখানের কালো-সাদা অংশটা পাঠাচ্ছি
+                        _, buffer = cv2.imencode('.jpg', mask_image)
+                        photo_bytes = io.BytesIO(buffer)
+                        photo_bytes.seek(0)
+                        
+                        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+                        for chat_id in TELEGRAM_CHAT_IDS:
+                            payload = {"chat_id": chat_id, "caption": debug_caption, "parse_mode": "Markdown"}
+                            files = {"photo": ("debug.jpg", photo_bytes, "image/jpeg")}
+                            try:
+                                requests.post(url, data=payload, files=files, timeout=20)
+                            except:
+                                pass
+                            photo_bytes.seek(0)
+                        last_debug_time = current_time
 
             # ---------------------------------------------------------
             # ২. বাঁ দিকের অংশ চেক (keywords.txt) - মেমোরি ভিত্তিক
             # ---------------------------------------------------------
-            # 👇 এরিয়াটা একটু বাড়িয়ে নিচ্ছি (উপরের দিক থেকে ৪৫% এবং ডান দিক থেকে ৩৫%)
             side_y1 = int(h * 0.45) 
-            side_y2 = int(h * 0.90) # একদম নিচের বার বাদ দিলাম
+            side_y2 = int(h * 0.90) 
             side_x1 = 0
             side_x2 = int(w * 0.35) 
             
             game_area = frame[side_y1:side_y2, side_x1:side_x2] 
-            game_text, game_words = process_ocr(game_area)
+            game_text, game_words = process_side_ocr(game_area)
             
-            # 👇 ডিবাগ লগ: বট কী পড়ছে তা দেখার জন্য
             safe_side = game_text[:60]
             print(f"[{iteration}] Side OCR: {safe_side}...", flush=True)
             
