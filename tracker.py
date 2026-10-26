@@ -22,10 +22,10 @@ TELEGRAM_CHAT_IDS = [
 SCAN_DURATION = 18000   # ৫ ঘণ্টা
 SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর পর স্ক্যান
 HEARTBEAT_INTERVAL = 1800 # প্রতি ৩০ মিনিট পর পর স্ট্যাটাস ছবি
-CENTER_COOLDOWN = 120   # ২ মিনিট
+CENTER_COOLDOWN = 120   # আসল অ্যালার্টের জন্য ২ মিনিট
 
-# 👇 ডিবাগ মোড (True করলে টেলিগ্রামে স্ক্রিনশট এবং টেক্সট পাঠাবে)
-DEBUG_MODE = True 
+# 👇 ডিবাগ টাইমার (যাতে বারবার ডিবাগ মেসেজ স্প্যাম না হয়)
+DEBUG_COOLDOWN = 60 
 last_debug_time = 0
 
 def parse_curl(curl_string):
@@ -132,19 +132,12 @@ def find_keyword_box(keyword, words_data, offset_x=0, offset_y=0):
             return (x_min, y_min, x_max - x_min, y_max - y_min)
     return None
 
-# 👇 মাঝখানের (Center) জন্য আপডেট করা OCR ফাংশন
 def process_center_ocr(image):
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    
-    # সাদা রঙের লেখা আলাদা করা (Saturation কম, Value বেশি)
     lower_white = (0, 0, 180)
     upper_white = (180, 50, 255)
     mask = cv2.inRange(hsv, lower_white, upper_white)
-    
-    # রঙ উল্টে দেওয়া (সাদা লেখা কালো হবে)
     mask = cv2.bitwise_not(mask)
-    
-    # ছবি বড় করা
     mask = cv2.resize(mask, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
     
     text = pytesseract.image_to_string(mask, config='--psm 6').upper()
@@ -161,9 +154,8 @@ def process_center_ocr(image):
                 'width': int(data['width'][i] / 3.0),
                 'height': int(data['height'][i] / 3.0)
             })
-    return text, words_data, mask
+    return text, words_data
 
-# 👇 সাইডের (Side) জন্য আগের মতোই OCR ফাংশন
 def process_side_ocr(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
@@ -188,7 +180,7 @@ def main():
     cookie_status = "Loaded" if "Cookie" in headers else "Not Found (Guest)"
     
     print(f"Target: {KICK_URL}", flush=True)
-    send_telegram_message(f"✅ Bot Started!\nStatus: {cookie_status}\nDebug Mode: {DEBUG_MODE}")
+    send_telegram_message(f"✅ Bot Started!\nStatus: {cookie_status}")
     
     try:
         with open("keywords.txt", "r") as f:
@@ -230,23 +222,24 @@ def main():
             current_time = time.time()
             
             # ---------------------------------------------------------
-            # ১. মাঝখানের অংশ চেক (ENTER YOUR STAKE USERNAME)
+            # ১. মাঝখানের অংশ চেক (৪টি শব্দের শর্ত + ডিবাগ মোড)
             # ---------------------------------------------------------
             center_y1, center_y2 = int(h * 0.20), int(h * 0.60)
             center_x1, center_x2 = int(w * 0.28), int(w * 0.72)
             center_image = frame[center_y1:center_y2, center_x1:center_x2]
             
-            center_text, center_words, mask_image = process_center_ocr(center_image)
+            center_text, center_words = process_center_ocr(center_image)
             
             safe_center = center_text.replace('\n', ' ')[:60]
             print(f"[{iteration}] Center OCR: {safe_center}...", flush=True)
             
-            # ৪টি শব্দের কঠোর শর্ত (OCR ভুল ধরার ভ্যারিয়েশনসহ)
+            # ৪টি শব্দের চেক (OCR ভুল ধরার ভ্যারিয়েশনসহ)
             has_enter = "ENTER" in center_text or "ENT" in center_text
             has_your = "YOUR" in center_text or "YUR" in center_text or "Y0UR" in center_text or "YOU" in center_text
             has_stake = "STAKE" in center_text or "5TAKE" in center_text or "STAKE.COM" in center_text
-            has_username = "USERNAME" in center_text or "USERNANE" in center_text or "USER" in center_text
+            has_username = "USERNAME" in center_text or "USERNANE" in center_text or "USER" in center_text or "USRNME" in center_text
 
+            # 👇 যদি ৪টি শব্দই পাওয়া যায় (আসল অ্যালার্ট)
             if has_enter and has_your and has_stake and has_username:
                 if current_time - last_center_alert_time >= CENTER_COOLDOWN:
                     print(f"[{iteration}] 🚨 HIT (Center): ENTER YOUR STAKE USERNAME", flush=True)
@@ -257,31 +250,28 @@ def main():
                     caption = f"🚨 Kick Alert!\nDetected: ENTER YOUR STAKE USERNAME\nChannel: {KICK_URL}"
                     send_telegram_photo(frame.copy(), caption, match_box, "ENTER YOUR STAKE USERNAME") 
                     last_center_alert_time = current_time
-            else:
-                # 👇 ডিবাগ মোড (যদি ৪টি শব্দ না পায়, কিন্তু STAKE বা ENTER দেখে, তবে ১ মিনিট পর পর মেসেজ দেবে)
-                if DEBUG_MODE and (has_stake or has_enter):
-                    if current_time - last_debug_time >= 60: 
-                        print(f"[{iteration}] 🔍 DEBUG: Center text didn't match 4 words.", flush=True)
-                        debug_caption = f"🔍 **DEBUG MODE**\nBot Read: `{center_text[:100]}`\n\nMissing words: ENTER={has_enter}, YOUR={has_your}, STAKE={has_stake}, USER={has_username}"
-                        
-                        # মাঝখানের কালো-সাদা অংশটা পাঠাচ্ছি
-                        _, buffer = cv2.imencode('.jpg', mask_image)
-                        photo_bytes = io.BytesIO(buffer)
-                        photo_bytes.seek(0)
-                        
-                        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-                        for chat_id in TELEGRAM_CHAT_IDS:
-                            payload = {"chat_id": chat_id, "caption": debug_caption, "parse_mode": "Markdown"}
-                            files = {"photo": ("debug.jpg", photo_bytes, "image/jpeg")}
-                            try:
-                                requests.post(url, data=payload, files=files, timeout=20)
-                            except:
-                                pass
-                            photo_bytes.seek(0)
-                        last_debug_time = current_time
+            
+            # 👇 যদি USERNAME পাওয়া যায় কিন্তু ৪টি শব্দ পুরো হয় না (ডিবাগ মেসেজ)
+            elif has_username:
+                if current_time - last_debug_time >= DEBUG_COOLDOWN:
+                    missing = []
+                    if not has_enter: missing.append("ENTER")
+                    if not has_your: missing.append("YOUR")
+                    if not has_stake: missing.append("STAKE")
+                    
+                    missing_str = ", ".join(missing) if missing else "None"
+                    print(f"[{iteration}] 🔍 DEBUG HIT: Missing {missing_str}", flush=True)
+                    
+                    debug_caption = f"🔍 **DEBUG: Missing Words**\n\nMissing: {missing_str}\n\nBot Read: `{center_text[:100]}`\nChannel: {KICK_URL}"
+                    
+                    # পুরো স্ক্রিনশট পাঠাচ্ছি (মাঝখানের অংশটুকু হাইলাইট করে)
+                    match_box = find_keyword_box("USER", center_words, offset_x=center_x1, offset_y=center_y1)
+                    send_telegram_photo(frame.copy(), debug_caption, match_box, "DEBUG: USERNAME")
+                    
+                    last_debug_time = current_time
 
             # ---------------------------------------------------------
-            # ২. বাঁ দিকের অংশ চেক (keywords.txt) - মেমোরি ভিত্তিক
+            # ২. বাঁ দিকের অংশ চেক (keywords.txt)
             # ---------------------------------------------------------
             side_y1 = int(h * 0.45) 
             side_y2 = int(h * 0.90) 
