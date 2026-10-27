@@ -24,7 +24,7 @@ SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর �
 HEARTBEAT_INTERVAL = 1800 # প্রতি ৩০ মিনিট পর পর স্ট্যাটাস ছবি
 CENTER_COOLDOWN = 120   # আসল অ্যালার্টের জন্য ২ মিনিট
 
-# 👇 ডিবাগ টাইমার (যাতে বারবার ডিবাগ মেসেজ স্প্যাম না হয়)
+# ডিবাগ টাইমার (USERNAME দেখলে ছবি পাঠানোর জন্য)
 DEBUG_COOLDOWN = 60 
 last_debug_time = 0
 
@@ -222,7 +222,7 @@ def main():
             current_time = time.time()
             
             # ---------------------------------------------------------
-            # ১. মাঝখানের অংশ চেক (৪টি শব্দের শর্ত + ডিবাগ মোড)
+            # ১. মাঝখানের অংশ চেক 
             # ---------------------------------------------------------
             center_y1, center_y2 = int(h * 0.20), int(h * 0.60)
             center_x1, center_x2 = int(w * 0.28), int(w * 0.72)
@@ -233,7 +233,7 @@ def main():
             safe_center = center_text.replace('\n', ' ')[:60]
             print(f"[{iteration}] Center OCR: {safe_center}...", flush=True)
             
-            # ৪টি শব্দের চেক (OCR ভুল ধরার ভ্যারিয়েশনসহ)
+            # 👇 ৪টি শব্দের কঠোর চেক
             has_enter = "ENTER" in center_text or "ENT" in center_text
             has_your = "YOUR" in center_text or "YUR" in center_text or "Y0UR" in center_text or "YOU" in center_text
             has_stake = "STAKE" in center_text or "5TAKE" in center_text or "STAKE.COM" in center_text
@@ -244,29 +244,21 @@ def main():
                 if current_time - last_center_alert_time >= CENTER_COOLDOWN:
                     print(f"[{iteration}] 🚨 HIT (Center): ENTER YOUR STAKE USERNAME", flush=True)
                     match_box = find_keyword_box("ENTER", center_words, offset_x=center_x1, offset_y=center_y1)
-                    if not match_box:
-                        match_box = find_keyword_box("STAKE", center_words, offset_x=center_x1, offset_y=center_y1)
                     
                     caption = f"🚨 Kick Alert!\nDetected: ENTER YOUR STAKE USERNAME\nChannel: {KICK_URL}"
                     send_telegram_photo(frame.copy(), caption, match_box, "ENTER YOUR STAKE USERNAME") 
                     last_center_alert_time = current_time
             
-            # 👇 যদি USERNAME পাওয়া যায় কিন্তু ৪টি শব্দ পুরো হয় না (ডিবাগ মেসেজ)
+            # 👇 যদি শুধু USERNAME পাওয়া যায় (ডিবাগ মেসেজ)
             elif has_username:
                 if current_time - last_debug_time >= DEBUG_COOLDOWN:
-                    missing = []
-                    if not has_enter: missing.append("ENTER")
-                    if not has_your: missing.append("YOUR")
-                    if not has_stake: missing.append("STAKE")
+                    print(f"[{iteration}] 🔍 DEBUG HIT: Missing 4-word match", flush=True)
                     
-                    missing_str = ", ".join(missing) if missing else "None"
-                    print(f"[{iteration}] 🔍 DEBUG HIT: Missing {missing_str}", flush=True)
+                    debug_caption = f"🔍 **DEBUG: Missing Words**\n\nBot Read: `{center_text[:100]}`\nChannel: {KICK_URL}"
                     
-                    debug_caption = f"🔍 **DEBUG: Missing Words**\n\nMissing: {missing_str}\n\nBot Read: `{center_text[:100]}`\nChannel: {KICK_URL}"
-                    
-                    # পুরো স্ক্রিনশট পাঠাচ্ছি (মাঝখানের অংশটুকু হাইলাইট করে)
+                    # পুরো স্ক্রিনশট পাঠাচ্ছি
                     match_box = find_keyword_box("USER", center_words, offset_x=center_x1, offset_y=center_y1)
-                    send_telegram_photo(frame.copy(), debug_caption, match_box, "DEBUG: USERNAME")
+                    send_telegram_photo(frame.copy(), debug_caption, match_box, "DEBUG: MISSING WORDS")
                     
                     last_debug_time = current_time
 
