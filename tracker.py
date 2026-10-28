@@ -28,6 +28,9 @@ CENTER_COOLDOWN = 120   # আসল অ্যালার্টের জন্�
 DEBUG_COOLDOWN = 60 
 last_debug_time = 0
 
+# 👇 স্ক্রিপ্ট শেষ হওয়ার ১ মিনিট আগে মেসেজ পাঠানোর জন্য ভেরিয়েবল
+END_WARNING_SENT = False
+
 def parse_curl(curl_string):
     headers = {}
     if not curl_string:
@@ -174,7 +177,7 @@ def process_side_ocr(image):
     return " ".join([wd['text'] for wd in words_data]), words_data
 
 def main():
-    global last_debug_time
+    global last_debug_time, END_WARNING_SENT
     
     headers = parse_curl(KICK_CURL)
     cookie_status = "Loaded" if "Cookie" in headers else "Not Found (Guest)"
@@ -221,6 +224,13 @@ def main():
             h, w = frame.shape[:2]
             current_time = time.time()
             
+            # 👇 স্ক্রিপ্ট বন্ধ হওয়ার ১ মিনিট আগে মেসেজ পাঠানোর লজিক
+            time_left = end_time - current_time
+            if time_left <= 60 and not END_WARNING_SENT:
+                print(f"[{iteration}] ⏰ Sending '1 minute left' warning...", flush=True)
+                send_telegram_message(f"⏰ **Warning!**\nThe bot will stop in 1 minute (5 hours completed).\nNew run will start soon via cron.\nChannel: {KICK_URL}")
+                END_WARNING_SENT = True
+            
             # ---------------------------------------------------------
             # ১. মাঝখানের অংশ চেক 
             # ---------------------------------------------------------
@@ -233,13 +243,11 @@ def main():
             safe_center = center_text.replace('\n', ' ')[:60]
             print(f"[{iteration}] Center OCR: {safe_center}...", flush=True)
             
-            # 👇 ৪টি শব্দের কঠোর চেক
             has_enter = "ENTER" in center_text or "ENT" in center_text
             has_your = "YOUR" in center_text or "YUR" in center_text or "Y0UR" in center_text or "YOU" in center_text
             has_stake = "STAKE" in center_text or "5TAKE" in center_text or "STAKE.COM" in center_text
             has_username = "USERNAME" in center_text or "USERNANE" in center_text or "USER" in center_text or "USRNME" in center_text
 
-            # 👇 যদি ৪টি শব্দই পাওয়া যায় (আসল অ্যালার্ট)
             if has_enter and has_your and has_stake and has_username:
                 if current_time - last_center_alert_time >= CENTER_COOLDOWN:
                     print(f"[{iteration}] 🚨 HIT (Center): ENTER YOUR STAKE USERNAME", flush=True)
@@ -249,14 +257,12 @@ def main():
                     send_telegram_photo(frame.copy(), caption, match_box, "ENTER YOUR STAKE USERNAME") 
                     last_center_alert_time = current_time
             
-            # 👇 যদি শুধু USERNAME পাওয়া যায় (ডিবাগ মেসেজ)
             elif has_username:
                 if current_time - last_debug_time >= DEBUG_COOLDOWN:
                     print(f"[{iteration}] 🔍 DEBUG HIT: Missing 4-word match", flush=True)
                     
                     debug_caption = f"🔍 **DEBUG: Missing Words**\n\nBot Read: `{center_text[:100]}`\nChannel: {KICK_URL}"
                     
-                    # পুরো স্ক্রিনশট পাঠাচ্ছি
                     match_box = find_keyword_box("USER", center_words, offset_x=center_x1, offset_y=center_y1)
                     send_telegram_photo(frame.copy(), debug_caption, match_box, "DEBUG: MISSING WORDS")
                     
