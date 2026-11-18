@@ -42,8 +42,10 @@ def send_telegram_message(text):
             print(f"[ERR] Message failed to {chat_id}: {e}", flush=True)
 
 def get_stream_url():
+    # ডিরেক্ট টেস্ট করার জন্য yt-dlp-কে বলছি সব ডিটেইল দেখাতে
     ydl_opts = {
-        "quiet": True, 
+        "quiet": False,         # 👈 False করায় এখন স্ক্রিনে সব ডিটেইল আসবে
+        "verbose": True,        # 👈 True করায় গভীরভাবে চেক করবে
         "format": "best", 
         "noplaylist": True, 
         "live_from_start": False,
@@ -57,21 +59,24 @@ def get_stream_url():
         },
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         }
     }
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(KICK_URL, download=False)
         
+        # যদি স্ট্রিম অফলাইন থাকে, info None হতে পারে
+        if not info:
+            raise Exception("No info returned (Channel might be offline)")
+            
         if 'url' in info:
             return info['url']
-        elif 'formats' in info:
+        elif 'formats' in info and len(info['formats']) > 0:
             return info['formats'][-1]['url']
         elif 'requested_formats' in info:
             return info['requested_formats'][0]['url']
         else:
-            raise Exception("No valid stream URL found in response.")
+            raise Exception("Stream is offline or no formats found.")
 
 def grab_frame(stream_url):
     cap = cv2.VideoCapture(stream_url)
@@ -209,7 +214,8 @@ def main():
                     stream_url = get_stream_url()
                     print(f"[{iteration}] ✅ Stream is Online!", flush=True)
                 except Exception as e:
-                    print(f"[{iteration}] 🔴 Stream is Offline or Error: {str(e)}. Waiting 5 mins...", flush=True)
+                    # 👇 এখানেই এবার ডিটেইল এরর প্রিন্ট হবে
+                    print(f"[{iteration}] 🔴 Stream is Offline or Error: {str(e)}", flush=True)
                     time.sleep(300) 
                     continue
 
