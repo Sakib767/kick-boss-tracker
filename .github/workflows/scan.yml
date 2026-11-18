@@ -2,9 +2,10 @@ name: Kick Visual Scan
 
 on:
   schedule:
-    - cron: "0 */5 * * *"   # 👈 প্রতি ৫ ঘণ্টায় একবার চালু হবে
-  workflow_dispatch:        # ম্যানুয়ালি রান করার অপশন
+    - cron: "0 */5 * * *"   # 👈 প্রতি ৫ ঘণ্টায় একবার (12টা, 5টা, 10টা) চালু হবে
+  workflow_dispatch:        # ম্যানুয়ালি রান করার অপশনও থাকবে
 
+# নতুন রান শুরু হলে পুরনো রান বাতিল হবে (যাতে একসাথে দুটো না চলে)
 concurrency:
   group: "kick-tracker"
   cancel-in-progress: true  
@@ -15,12 +16,6 @@ jobs:
     timeout-minutes: 330   
     steps:
       - uses: actions/checkout@v4
-
-      # 👇 Deno ইনস্টল (yt-dlp এর জন্য জরুরি)
-      - name: Install Deno (For yt-dlp)
-        uses: denoland/setup-deno@v1
-        with:
-          deno-version: v1.x
 
       - name: Cache apt packages
         uses: actions/cache@v4
@@ -50,9 +45,7 @@ jobs:
       - name: Install Python deps
         run: |
           pip install --upgrade pip
-          # 👇 curl_cffi এবং requirements.txt থেকে ইনস্টল করা হচ্ছে
-          pip install "curl_cffi>=0.10.0,<0.16"
-          pip install -r requirements.txt
+          pip install yt-dlp opencv-python-headless pytesseract requests
 
       - name: Run tracker
         env:
