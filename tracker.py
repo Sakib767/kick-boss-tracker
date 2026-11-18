@@ -8,10 +8,9 @@ import io
 import re
 from datetime import datetime
 
-# গোপন তথ্যগুলো
+# গোপন তথ্যগুলো (কুকি বাদ দেওয়া হয়েছে)
 KICK_URL = os.environ.get("KICK_URL", "https://kick.com/classybeef")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-KICK_CURL = os.environ.get("KICK_CURL", "") 
 
 # পার্সোনাল এবং গ্রুপের Chat ID
 TELEGRAM_CHAT_IDS = [
@@ -28,26 +27,6 @@ DEBUG_COOLDOWN = 60
 last_debug_time = 0
 END_WARNING_SENT = False
 
-def parse_curl(curl_string):
-    headers = {}
-    if not curl_string:
-        return headers
-    # কুকি বের করা
-    cookie_match = re.search(r"-H\s+['\"]cookie:\s*(.*?)['\"]", curl_string, re.IGNORECASE)
-    if cookie_match:
-        headers["Cookie"] = cookie_match.group(1)
-    else:
-        if "curl" not in curl_string.lower():
-            headers["Cookie"] = curl_string.strip()
-            
-    # ইউজার-এজেন্ট বের করা
-    ua_match = re.search(r"-H\s+['\"]user-agent:\s*(.*?)['\"]", curl_string, re.IGNORECASE)
-    if ua_match:
-        headers["User-Agent"] = ua_match.group(1)
-    else:
-        headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    return headers
-
 def send_telegram_message(text):
     if not TELEGRAM_BOT_TOKEN:
         return
@@ -59,27 +38,28 @@ def send_telegram_message(text):
         except Exception as e:
             print(f"[ERR] Message failed to {chat_id}: {e}", flush=True)
 
-def get_stream_url(headers):
+def get_stream_url():
     ydl_opts = {
         "quiet": False,         
         "verbose": True,        
         "format": "best", 
         "noplaylist": True, 
         "live_from_start": False,
-        "impersonate": "chrome",
+        "impersonate": "chrome", # ব্রাউজার ইমপারসোনেশন
         "nocheckcertificate": True,
-        "js_runtimes": {"deno": {}},
+        "js_runtimes": {"deno": {}}, # Deno রানটাইম
         "extractor_args": {
             "kick": {
                 "api": ["v2", "v1"], 
                 "client": ["web", "android"] 
             }
+        },
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
         }
     }
     
-    if headers:
-        ydl_opts["http_headers"] = headers
-        
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(KICK_URL, download=False)
         if not info:
@@ -189,11 +169,8 @@ def process_side_ocr(image):
 def main():
     global last_debug_time, END_WARNING_SENT
     
-    headers = parse_curl(KICK_CURL)
-    cookie_status = "Loaded" if "Cookie" in headers else "Not Found (Guest Mode)"
-    
     print(f"Target: {KICK_URL}", flush=True)
-    send_telegram_message(f"✅ Bot Started!\nStatus: {cookie_status}")
+    send_telegram_message(f"✅ Bot Started!\nStatus: Public/Guest Mode")
     
     try:
         with open("keywords.txt", "r") as f:
@@ -217,7 +194,7 @@ def main():
         try:
             if not stream_url:
                 try:
-                    stream_url = get_stream_url(headers)
+                    stream_url = get_stream_url()
                     print(f"[{iteration}] ✅ Stream is Online!", flush=True)
                 except Exception as e:
                     print(f"[{iteration}] 🔴 Stream is Offline or Error: {str(e)}", flush=True)
