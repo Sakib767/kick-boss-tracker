@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 
 # গোপন তথ্যগুলো
-KICK_URL = os.environ.get("KICK_URL", "")
+KICK_URL = "https://kick.com/classybeef" # 👈 সরাসরি লিংক বসানো হলো
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
 # পার্সোনাল এবং গ্রুপের Chat ID
@@ -63,7 +63,13 @@ def get_stream_url():
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(KICK_URL, download=False)
-        return info["url"]
+        # স্ট্রিম লিংক খুঁজে বের করা
+        if 'url' in info:
+            return info['url']
+        elif 'formats' in info:
+            return info['formats'][-1]['url']
+        else:
+            return info['requested_formats'][0]['url']
 
 def grab_frame(stream_url):
     cap = cv2.VideoCapture(stream_url)
@@ -201,8 +207,8 @@ def main():
                     stream_url = get_stream_url()
                     print(f"[{iteration}] ✅ Stream is Online!", flush=True)
                 except Exception as e:
-                    # 👇 এখানে {e} যোগ করা হয়েছে যাতে আসল এররটা লগে দেখা যায়
-                    print(f"[{iteration}] 🔴 Stream is Offline or Error: {e}. Waiting 5 mins...", flush=True)
+                    import traceback
+                    print(f"[{iteration}] 🔴 Stream is Offline or Error: {str(e)}", flush=True)
                     time.sleep(300) 
                     continue
 
