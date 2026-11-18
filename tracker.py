@@ -13,22 +13,17 @@ KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 KICK_CURL = os.environ.get("KICK_CURL", "") 
 
-# পার্সোনাল এবং গ্রুপের Chat ID
-TELEGRAM_CHAT_IDS = [
-    "8949091966",        # তোমার পার্সোনাল Chat ID
-    "-1004493539395"     # গ্রুপের Chat ID
-]
+# Telegram Chat IDs
+chat_ids_str = os.environ.get("TELEGRAM_CHAT_ID", "")
+TELEGRAM_CHAT_IDS = [cid.strip() for cid in chat_ids_str.split(",") if cid.strip()]
 
 SCAN_DURATION = 18000   # ৫ ঘণ্টা
 SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর পর স্ক্যান
 HEARTBEAT_INTERVAL = 1800 # প্রতি ৩০ মিনিট পর পর স্ট্যাটাস ছবি
 CENTER_COOLDOWN = 120   # আসল অ্যালার্টের জন্য ২ মিনিট
+DEBUG_COOLDOWN = 60     # ডিবাগ ছবি পাঠানোর কুলডাউন
 
-# ডিবাগ টাইমার (USERNAME দেখলে ছবি পাঠানোর জন্য)
-DEBUG_COOLDOWN = 60 
 last_debug_time = 0
-
-# 👇 স্ক্রিপ্ট শেষ হওয়ার ১ মিনিট আগে মেসেজ পাঠানোর জন্য ভেরিয়েবল
 END_WARNING_SENT = False
 
 def parse_curl(curl_string):
@@ -64,22 +59,25 @@ def get_stream_url(headers):
         "quiet": True, 
         "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best", 
         "noplaylist": True, 
-        "live_from_start": False,
-        # 👇 SSL এরর এবং ব্লকিং এড়াতে নতুন অপশন
-        "no_check_certificate": True,
-        "impersonate": "chrome",
-        "http_headers": headers if headers else None
+        "live_from_start": False
     }
+    if headers:
+        ydl_opts["http_headers"] = headers
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(KICK_URL, download=False)
         return info["url"]
 
 def grab_frame(stream_url):
-    cap = cv2.VideoCapture(stream_url)
+    # OpenCV-কে FFmpeg ব্যবহার করে SSL সার্টিফিকেট ইগনোর করতে বলা হচ্ছে
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "verify_certificate=0|tls_verify=0|allowed_extensions=ALL"
+    
+    cap = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
     if not cap.isOpened():
         return None
+        
     for _ in range(10):
         cap.read()
+        
     ret, frame = cap.read()
     cap.release()
     return frame if ret else None
@@ -212,13 +210,27 @@ def main():
                 try:
                     stream_url = get_stream_url(headers)
                     print(f"[{iteration}] ✅ Stream is Online!", flush=True)
+                    
+                    # 👇 [NEW] বট চালু হওয়া মাত্রই প্রথম স্ক্রিনশট পাঠানোর লজিক
+                    if iteration == 1:
+                        print(f"[{iteration}] 📸 Sending startup screenshot...", flush=True)
+                        startup_frame = grab_frame(stream_url)
+                        if startup_frame is not None and startup_frame.size > 0:
+                            startup_caption = f"🚀 **Bot Started Successfully!**\n\nStream is online. Here is the first live screenshot.\n\nChannel: {KICK_URL}"
+                            send_telegram_photo(startup_frame, startup_caption)
+                        else:
+                            send_telegram_message("⚠️ Bot started, but couldn't grab the first screenshot.")
+                            
                 except Exception as e:
                     print(f"[{iteration}] 🔴 Stream is Offline or Error. Waiting 5 mins...", flush=True)
                     time.sleep(300) 
                     continue
 
             frame = grab_frame(stream_url)
-            if frame is None:
+            
+            # ফ্রেম ফাঁকা বা None হলে স্ট্রিম লিংক রিফ্রেশ করবে
+            if frame is None or frame.size == 0:
+                print(f"[{iteration}] ⚠️ Empty frame received. Refreshing stream URL...", flush=True)
                 stream_url = None 
                 time.sleep(10)
                 continue
@@ -226,16 +238,14 @@ def main():
             h, w = frame.shape[:2]
             current_time = time.time()
             
-            # 👇 স্ক্রিপ্ট বন্ধ হওয়ার ১ মিনিট আগে মেসেজ পাঠানোর লজিক
+            # স্ক্রিপ্ট বন্ধ হওয়ার ১ মিনিট আগে মেসেজ পাঠানোর লজিক
             time_left = end_time - current_time
             if time_left <= 60 and not END_WARNING_SENT:
                 print(f"[{iteration}] ⏰ Sending '1 minute left' warning...", flush=True)
                 send_telegram_message(f"⏰ **Warning!**\nThe bot will stop in 1 minute (5 hours completed).\nNew run will start soon via cron.\nChannel: {KICK_URL}")
                 END_WARNING_SENT = True
             
-            # ---------------------------------------------------------
             # ১. মাঝখানের অংশ চেক 
-            # ---------------------------------------------------------
             center_y1, center_y2 = int(h * 0.20), int(h * 0.60)
             center_x1, center_x2 = int(w * 0.28), int(w * 0.72)
             center_image = frame[center_y1:center_y2, center_x1:center_x2]
@@ -270,9 +280,7 @@ def main():
                     
                     last_debug_time = current_time
 
-            # ---------------------------------------------------------
             # ২. বাঁ দিকের অংশ চেক (keywords.txt)
-            # ---------------------------------------------------------
             side_y1 = int(h * 0.45) 
             side_y2 = int(h * 0.90) 
             side_x1 = 0
@@ -302,9 +310,7 @@ def main():
             elif current_side_keyword and current_side_keyword == last_side_keyword:
                 print(f"[{iteration}] ⏭️ Skipping same side keyword: {current_side_keyword}", flush=True)
             
-            # ---------------------------------------------------------
             # ৩. ৩০ মিনিট পর পর স্ট্যাটাস ছবি (Heartbeat)
-            # ---------------------------------------------------------
             if current_time - last_heartbeat_time >= HEARTBEAT_INTERVAL:
                 print(f"[{iteration}] ⏱️ Sending 30-min heartbeat screenshot...", flush=True)
                 caption = f"⏱️ Status Update (30 min)\nScanning...\nLast Side Match: {last_side_keyword if last_side_keyword else 'None'}\nChannel: {KICK_URL}"
