@@ -45,7 +45,7 @@ jobs:
       - name: Install Python deps
         run: |
           pip install --upgrade pip
-          pip install yt-dlp opencv-python-headless pytesseract requests
+          pip install yt-dlp opencv-python-headless pytesseract requests curl_cffi
 
       - name: Run tracker
         env:
