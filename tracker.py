@@ -6,8 +6,8 @@ import os
 import time
 import io
 import re
-import subprocess # 👈 ffmpeg চালানোর জন্য যোগ করা হলো
-import numpy as np # 👈 ছবি প্রসেস করার জন্য যোগ করা হলো
+import subprocess
+import numpy as np
 from datetime import datetime
 
 # গোপন তথ্যগুলো
@@ -57,34 +57,45 @@ def send_telegram_message(text):
             print(f"[ERR] Message failed to {chat_id}: {e}", flush=True)
 
 def get_stream_url(headers):
+    # 👇 HLS (.m3u8) ফরম্যাটে জোর করা হলো
     ydl_opts = {
         "quiet": True, 
-        "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best", 
+        "format": "best[protocol^=m3u8]/best", 
         "noplaylist": True, 
         "live_from_start": False
     }
     if headers:
         ydl_opts["http_headers"] = headers
+    
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(KICK_URL, download=False)
-        return info["url"]
+        
+        # 👇 লিংক বের করার নিশ্চিত লজিক
+        if 'url' in info:
+            return info['url']
+        elif 'requested_formats' in info:
+            return info['requested_formats'][0]['url']
+        else:
+            return info['formats'][-1]['url']
 
-# 👇 সম্পূর্ণ নতুন grab_frame (ffmpeg দিয়ে)
 def grab_frame(stream_url):
     try:
         cmd = [
             'ffmpeg',
             '-y',                        # ওভাররাইট
-            '-loglevel', 'quiet',        # লগ দেখাবে না
-            '-user_agent', 'Mozilla/5.0',# ডামি ইউজার এজেন্ট
+            '-loglevel', 'error',        # শুধু এরর দেখাবে
+            '-user_agent', 'Mozilla/5.0',
             '-verify_certificate', '0',  # SSL ইগনোর
-            '-i', stream_url,            # স্ট্রিম লিংক
-            '-frames:v', '1',            # ১টা ফ্রেম
-            '-f', 'image2pipe',          # পাইপে ছবি দেবে
-            '-vcodec', 'mjpeg',          # jpg ফরম্যাটে
+            '-analyzeduration', '10M',   # স্ট্রিম অ্যানালাইসিস টাইম বাড়ানো হলো
+            '-probesize', '10M',         # স্ট্রিম ডাটা পড়ার সাইজ বাড়ানো হলো
+            '-i', stream_url,            
+            '-frames:v', '1',            # ১টা ফ্রেম নেবে
+            '-f', 'image2pipe',          
+            '-vcodec', 'mjpeg',          
             '-'
         ]
         
+        # ২০ সেকেন্ডের টাইমআউট
         process = subprocess.run(cmd, capture_output=True, timeout=20)
         
         if process.returncode == 0 and process.stdout:
@@ -92,6 +103,10 @@ def grab_frame(stream_url):
             frame = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
             return frame
         else:
+            # 👇 যদি ফ্রেম না আসে, তবে ffmpeg কী এরর দিচ্ছে সেটা লগে দেখাবে
+            if process.stderr:
+                err_msg = process.stderr.decode('utf-8', errors='ignore').strip()
+                print(f"FFmpeg debug: {err_msg[:250]}", flush=True)
             return None
     except Exception as e:
         print(f"FFmpeg grab error: {e}", flush=True)
@@ -226,7 +241,6 @@ def main():
                     stream_url = get_stream_url(headers)
                     print(f"[{iteration}] ✅ Stream is Online!", flush=True)
                     
-                    # বট চালু হওয়া মাত্রই প্রথম স্ক্রিনশট পাঠানোর লজিক
                     if iteration == 1:
                         print(f"[{iteration}] 📸 Sending startup screenshot...", flush=True)
                         startup_frame = grab_frame(stream_url)
@@ -243,7 +257,6 @@ def main():
 
             frame = grab_frame(stream_url)
             
-            # ফ্রেম ফাঁকা বা None হলে স্ট্রিম লিংক রিফ্রেশ করবে
             if frame is None or frame.size == 0:
                 print(f"[{iteration}] ⚠️ Empty frame received. Refreshing stream URL...", flush=True)
                 stream_url = None 
@@ -253,7 +266,6 @@ def main():
             h, w = frame.shape[:2]
             current_time = time.time()
             
-            # স্ক্রিপ্ট বন্ধ হওয়ার ১ মিনিট আগে মেসেজ পাঠানোর লজিক
             time_left = end_time - current_time
             if time_left <= 60 and not END_WARNING_SENT:
                 print(f"[{iteration}] ⏰ Sending '1 minute left' warning...", flush=True)
