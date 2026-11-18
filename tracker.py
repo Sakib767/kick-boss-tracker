@@ -11,7 +11,6 @@ from datetime import datetime
 # গোপন তথ্যগুলো
 KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-KICK_CURL = os.environ.get("KICK_CURL", "") 
 
 # পার্সোনাল এবং গ্রুপের Chat ID
 TELEGRAM_CHAT_IDS = [
@@ -19,31 +18,17 @@ TELEGRAM_CHAT_IDS = [
     "-1004493539395"     # গ্রুপের Chat ID
 ]
 
-SCAN_DURATION = 17000   # ৫ ঘণ্টার একটু কম (GitHub Timeout এড়াতে)
-SCAN_INTERVAL = 10      
-HEARTBEAT_INTERVAL = 1800 
-CENTER_COOLDOWN = 120   
+SCAN_DURATION = 17000   # ৫ ঘণ্টার একটু কম (GitHub Actions টাইমআউট এড়াতে)
+SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর পর স্ক্যান
+HEARTBEAT_INTERVAL = 1800 # প্রতি ৩০ মিনিট পর পর স্ট্যাটাস ছবি
+CENTER_COOLDOWN = 120   # আসল অ্যালার্টের জন্য ২ মিনিট
 
+# ডিবাগ টাইমার (USERNAME দেখলে ছবি পাঠানোর জন্য)
 DEBUG_COOLDOWN = 60 
 last_debug_time = 0
-END_WARNING_SENT = False
 
-def parse_curl(curl_string):
-    headers = {}
-    if not curl_string:
-        return headers
-    cookie_match = re.search(r"-H\s+['\"]cookie:\s*(.*?)['\"]", curl_string, re.IGNORECASE)
-    if cookie_match:
-        headers["Cookie"] = cookie_match.group(1)
-    else:
-        if "curl" not in curl_string.lower():
-            headers["Cookie"] = curl_string.strip()
-    ua_match = re.search(r"-H\s+['\"]user-agent:\s*(.*?)['\"]", curl_string, re.IGNORECASE)
-    if ua_match:
-        headers["User-Agent"] = ua_match.group(1)
-    else:
-        headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    return headers
+# 👇 স্ক্রিপ্ট শেষ হওয়ার ১ মিনিট আগে মেসেজ পাঠানোর জন্য ভেরিয়েবল
+END_WARNING_SENT = False
 
 def send_telegram_message(text):
     if not TELEGRAM_BOT_TOKEN:
@@ -56,7 +41,8 @@ def send_telegram_message(text):
         except Exception as e:
             print(f"[ERR] Message failed to {chat_id}: {e}", flush=True)
 
-def get_stream_url(headers):
+def get_stream_url():
+    # গেস্ট হিসেবে কাজ করার জন্য এবং Cloudflare বাইপাস করার অপশন
     ydl_opts = {
         "quiet": True, 
         "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best", 
@@ -64,10 +50,17 @@ def get_stream_url(headers):
         "live_from_start": False,
         "impersonate": "chrome",         # ব্রাউজারের মতো আচরণ করতে
         "nocheckcertificate": True,      # SSL এরর এড়াতে
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+        "extractor_args": {
+            "kick": {
+                "api": ["v1"]
+            }
+        }
     }
-    if headers:
-        ydl_opts["http_headers"] = headers
-        
+    
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(KICK_URL, download=False)
         return info["url"]
@@ -179,11 +172,8 @@ def process_side_ocr(image):
 def main():
     global last_debug_time, END_WARNING_SENT
     
-    headers = parse_curl(KICK_CURL)
-    cookie_status = "Loaded" if "Cookie" in headers else "Not Found (Guest Mode)"
-    
     print(f"Target: {KICK_URL}", flush=True)
-    send_telegram_message(f"✅ Bot Started!\nStatus: {cookie_status}")
+    send_telegram_message(f"✅ Bot Started!\nStatus: Public/Guest Mode")
     
     try:
         with open("keywords.txt", "r") as f:
@@ -208,9 +198,10 @@ def main():
         try:
             if not stream_url:
                 try:
-                    stream_url = get_stream_url(headers)
+                    stream_url = get_stream_url()
                     print(f"[{iteration}] ✅ Stream is Online!", flush=True)
                 except Exception as e:
+                    # 👇 এখানে {e} যোগ করা হয়েছে যাতে আসল এররটা লগে দেখা যায়
                     print(f"[{iteration}] 🔴 Stream is Offline or Error: {e}. Waiting 5 mins...", flush=True)
                     time.sleep(300) 
                     continue
@@ -230,12 +221,15 @@ def main():
                 send_telegram_message(f"⏰ **Warning!**\nThe bot will stop in 1 minute.\nNew run will start soon via cron.\nChannel: {KICK_URL}")
                 END_WARNING_SENT = True
             
+            # ---------------------------------------------------------
             # ১. মাঝখানের অংশ চেক 
+            # ---------------------------------------------------------
             center_y1, center_y2 = int(h * 0.20), int(h * 0.60)
             center_x1, center_x2 = int(w * 0.28), int(w * 0.72)
             center_image = frame[center_y1:center_y2, center_x1:center_x2]
             
             center_text, center_words = process_center_ocr(center_image)
+            
             safe_center = center_text.replace('\n', ' ')[:60]
             print(f"[{iteration}] Center OCR: {safe_center}...", flush=True)
             
@@ -248,6 +242,7 @@ def main():
                 if current_time - last_center_alert_time >= CENTER_COOLDOWN:
                     print(f"[{iteration}] 🚨 HIT (Center): ENTER YOUR STAKE USERNAME", flush=True)
                     match_box = find_keyword_box("ENTER", center_words, offset_x=center_x1, offset_y=center_y1)
+                    
                     caption = f"🚨 Kick Alert!\nDetected: ENTER YOUR STAKE USERNAME\nChannel: {KICK_URL}"
                     send_telegram_photo(frame.copy(), caption, match_box, "ENTER YOUR STAKE USERNAME") 
                     last_center_alert_time = current_time
@@ -255,12 +250,17 @@ def main():
             elif has_username:
                 if current_time - last_debug_time >= DEBUG_COOLDOWN:
                     print(f"[{iteration}] 🔍 DEBUG HIT: Missing 4-word match", flush=True)
+                    
                     debug_caption = f"🔍 **DEBUG: Missing Words**\n\nBot Read: `{center_text[:100]}`\nChannel: {KICK_URL}"
+                    
                     match_box = find_keyword_box("USER", center_words, offset_x=center_x1, offset_y=center_y1)
                     send_telegram_photo(frame.copy(), debug_caption, match_box, "DEBUG: MISSING WORDS")
+                    
                     last_debug_time = current_time
 
-            # ২. বাঁ দিকের অংশ চেক
+            # ---------------------------------------------------------
+            # ২. বাঁ দিকের অংশ চেক (keywords.txt)
+            # ---------------------------------------------------------
             side_y1 = int(h * 0.45) 
             side_y2 = int(h * 0.90) 
             side_x1 = 0
@@ -268,6 +268,7 @@ def main():
             
             game_area = frame[side_y1:side_y2, side_x1:side_x2] 
             game_text, game_words = process_side_ocr(game_area)
+            
             safe_side = game_text[:60]
             print(f"[{iteration}] Side OCR: {safe_side}...", flush=True)
             
@@ -289,7 +290,9 @@ def main():
             elif current_side_keyword and current_side_keyword == last_side_keyword:
                 print(f"[{iteration}] ⏭️ Skipping same side keyword: {current_side_keyword}", flush=True)
             
-            # ৩. ৩০ মিনিট পর পর স্ট্যাটাস ছবি
+            # ---------------------------------------------------------
+            # ৩. ৩০ মিনিট পর পর স্ট্যাটাস ছবি (Heartbeat)
+            # ---------------------------------------------------------
             if current_time - last_heartbeat_time >= HEARTBEAT_INTERVAL:
                 print(f"[{iteration}] ⏱️ Sending 30-min heartbeat screenshot...", flush=True)
                 caption = f"⏱️ Status Update (30 min)\nScanning...\nLast Side Match: {last_side_keyword if last_side_keyword else 'None'}\nChannel: {KICK_URL}"
