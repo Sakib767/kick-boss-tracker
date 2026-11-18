@@ -59,7 +59,8 @@ def get_stream_url(headers):
         "quiet": True, 
         "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best", 
         "noplaylist": True, 
-        "live_from_start": False
+        "live_from_start": False,
+        "impersonate": "chrome" # 👈 yt-dlp-কে ব্রাউজার সিমুলেট করতে বলা হচ্ছে
     }
     if headers:
         ydl_opts["http_headers"] = headers
@@ -68,13 +69,15 @@ def get_stream_url(headers):
         return info["url"]
 
 def grab_frame(stream_url):
-    # OpenCV-কে FFmpeg ব্যবহার করে SSL সার্টিফিকেট ইগনোর করতে বলা হচ্ছে
-    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "verify_certificate=0|tls_verify=0|allowed_extensions=ALL"
-    
+    # OpenCV-কে সরাসরি FFmpeg ব্যাকএন্ড ব্যবহার করতে বলা হচ্ছে
     cap = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
     if not cap.isOpened():
         return None
-        
+    
+    # নেটওয়ার্ক স্ট্রিমের জন্য বাফার এবং টাইমআউট সেট করা
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)
+    cap.set(cv2.CAP_PROP_TIMEOUT, 10000) # ১০ সেকেন্ড টাইমআউট
+    
     for _ in range(10):
         cap.read()
         
@@ -211,7 +214,7 @@ def main():
                     stream_url = get_stream_url(headers)
                     print(f"[{iteration}] ✅ Stream is Online!", flush=True)
                     
-                    # 👇 [NEW] বট চালু হওয়া মাত্রই প্রথম স্ক্রিনশট পাঠানোর লজিক
+                    # বট চালু হওয়া মাত্রই প্রথম স্ক্রিনশট পাঠানোর লজিক
                     if iteration == 1:
                         print(f"[{iteration}] 📸 Sending startup screenshot...", flush=True)
                         startup_frame = grab_frame(stream_url)
