@@ -1,48 +1,57 @@
-name: Kick Stream Tracker
+name: Kick Visual Scan
 
 on:
   schedule:
-    - cron: '10 */5 * * *' 
-  workflow_dispatch: 
+    - cron: "0 */5 * * *"   # 👈 প্রতি ৫ ঘণ্টায় একবার (12টা, 5টা, 10টা) চালু হবে
+  workflow_dispatch:        # ম্যানুয়ালি রান করার অপশনও থাকবে
+
+# নতুন রান শুরু হলে পুরনো রান বাতিল হবে (যাতে একসাথে দুটো না চলে)
+concurrency:
+  group: "kick-tracker"
+  cancel-in-progress: true  
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
-
+    timeout-minutes: 330   
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11' # 👈 Python 3.11 এ আপডেট করা হলো
-          cache: 'pip'
-
-      - name: Cache APT Packages (Tesseract & FFmpeg)
+      - name: Cache apt packages
         uses: actions/cache@v4
-        id: apt-cache
         with:
-          path: |
-            /var/cache/apt/archives
-            /var/lib/apt/lists
+          path: /var/cache/apt/archives
           key: ${{ runner.os }}-apt-${{ hashFiles('**/scan.yml') }}
           restore-keys: |
             ${{ runner.os }}-apt-
 
-      - name: Install System Dependencies
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/scan.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y tesseract-ocr libtesseract-dev ffmpeg
+          sudo apt-get install -y --no-install-recommends tesseract-ocr libtesseract-dev ffmpeg libgl1
 
-      - name: Install Python Dependencies
+      - name: Install Python deps
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install --upgrade pip
+          pip install yt-dlp opencv-python-headless pytesseract requests
 
-      - name: Run Tracker Script
+      - name: Run tracker
         env:
+          KICK_URL: ${{ secrets.KICK_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        run: |
-          python tracker.py
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          KICK_CURL: ${{ secrets.KICK_CURL }} 
+          PYTHONUNBUFFERED: 1
+        run: python tracker.py
