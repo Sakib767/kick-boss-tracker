@@ -2,10 +2,9 @@ name: Kick Visual Scan
 
 on:
   schedule:
-    - cron: "0 */5 * * *"   # 👈 প্রতি ৫ ঘণ্টায় একবার (12টা, 5টা, 10টা) চালু হবে
+    - cron: "0 */5 * * *"   # 👈 প্রতি ৫ ঘণ্টায় একবার চালু হবে
   workflow_dispatch:        # ম্যানুয়ালি রান করার অপশনও থাকবে
 
-# নতুন রান শুরু হলে পুরনো রান বাতিল হবে (যাতে একসাথে দুটো না চলে)
 concurrency:
   group: "kick-tracker"
   cancel-in-progress: true  
@@ -45,7 +44,8 @@ jobs:
       - name: Install Python deps
         run: |
           pip install --upgrade pip
-          pip install yt-dlp opencv-python-headless pytesseract requests curl_cffi
+          pip install --upgrade yt-dlp
+          pip install opencv-python-headless pytesseract requests
 
       - name: Run tracker
         env:
