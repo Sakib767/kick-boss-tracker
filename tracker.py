@@ -57,7 +57,6 @@ def send_telegram_message(text):
             print(f"[ERR] Message failed to {chat_id}: {e}", flush=True)
 
 def get_stream_url(headers):
-    # 👇 HLS (.m3u8) ফরম্যাটে জোর করা হলো
     ydl_opts = {
         "quiet": True, 
         "format": "best[protocol^=m3u8]/best", 
@@ -69,8 +68,6 @@ def get_stream_url(headers):
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(KICK_URL, download=False)
-        
-        # 👇 লিংক বের করার নিশ্চিত লজিক
         if 'url' in info:
             return info['url']
         elif 'requested_formats' in info:
@@ -85,7 +82,7 @@ def grab_frame(stream_url):
             '-y',                        # ওভাররাইট
             '-loglevel', 'error',        # শুধু এরর দেখাবে
             '-user_agent', 'Mozilla/5.0',
-            '-verify_certificate', '0',  # SSL ইগনোর
+            '-tls_verify', '0',          # 👈 SSL ইগনোর (আগের verify_certificate এর বদলে)
             '-analyzeduration', '10M',   # স্ট্রিম অ্যানালাইসিস টাইম বাড়ানো হলো
             '-probesize', '10M',         # স্ট্রিম ডাটা পড়ার সাইজ বাড়ানো হলো
             '-i', stream_url,            
@@ -95,7 +92,6 @@ def grab_frame(stream_url):
             '-'
         ]
         
-        # ২০ সেকেন্ডের টাইমআউট
         process = subprocess.run(cmd, capture_output=True, timeout=20)
         
         if process.returncode == 0 and process.stdout:
@@ -103,7 +99,6 @@ def grab_frame(stream_url):
             frame = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
             return frame
         else:
-            # 👇 যদি ফ্রেম না আসে, তবে ffmpeg কী এরর দিচ্ছে সেটা লগে দেখাবে
             if process.stderr:
                 err_msg = process.stderr.decode('utf-8', errors='ignore').strip()
                 print(f"FFmpeg debug: {err_msg[:250]}", flush=True)
