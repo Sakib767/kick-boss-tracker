@@ -59,8 +59,8 @@ def get_stream_url(headers):
         "quiet": True, 
         "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best", 
         "noplaylist": True, 
-        "live_from_start": False,
-        "impersonate": "chrome" # 👈 yt-dlp-কে ব্রাউজার সিমুলেট করতে বলা হচ্ছে
+        "live_from_start": False
+        # 👈 impersonate বাদ দেওয়া হয়েছে
     }
     if headers:
         ydl_opts["http_headers"] = headers
