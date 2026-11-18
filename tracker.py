@@ -42,34 +42,36 @@ def send_telegram_message(text):
             print(f"[ERR] Message failed to {chat_id}: {e}", flush=True)
 
 def get_stream_url():
-    # গেস্ট হিসেবে কাজ করার জন্য এবং Cloudflare বাইপাস করার অপশন
     ydl_opts = {
         "quiet": True, 
-        "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best", 
+        "format": "best", 
         "noplaylist": True, 
         "live_from_start": False,
-        "impersonate": "chrome",         # ব্রাউজারের মতো আচরণ করতে
-        "nocheckcertificate": True,      # SSL এরর এড়াতে
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-        },
+        "impersonate": "chrome",
+        "nocheckcertificate": True,
         "extractor_args": {
             "kick": {
-                "api": ["v1"]
+                "api": ["v2", "v1"], 
+                "client": ["web", "android"] 
             }
+        },
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         }
     }
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(KICK_URL, download=False)
-        # স্ট্রিম লিংক খুঁজে বের করা
+        
         if 'url' in info:
             return info['url']
         elif 'formats' in info:
             return info['formats'][-1]['url']
-        else:
+        elif 'requested_formats' in info:
             return info['requested_formats'][0]['url']
+        else:
+            raise Exception("No valid stream URL found in response.")
 
 def grab_frame(stream_url):
     cap = cv2.VideoCapture(stream_url)
@@ -207,8 +209,7 @@ def main():
                     stream_url = get_stream_url()
                     print(f"[{iteration}] ✅ Stream is Online!", flush=True)
                 except Exception as e:
-                    import traceback
-                    print(f"[{iteration}] 🔴 Stream is Offline or Error: {str(e)}", flush=True)
+                    print(f"[{iteration}] 🔴 Stream is Offline or Error: {str(e)}. Waiting 5 mins...", flush=True)
                     time.sleep(300) 
                     continue
 
