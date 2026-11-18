@@ -1,0 +1,6 @@
+opencv-python-headless
+pytesseract
+requests
+certifi
+curl_cffi>=0.10,<0.16
+yt-dlp
