@@ -64,10 +64,12 @@ def get_stream_url(headers):
         "quiet": True, 
         "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best", 
         "noplaylist": True, 
-        "live_from_start": False
+        "live_from_start": False,
+        # 👇 SSL এরর এবং ব্লকিং এড়াতে নতুন অপশন
+        "no_check_certificate": True,
+        "impersonate": "chrome",
+        "http_headers": headers if headers else None
     }
-    if headers:
-        ydl_opts["http_headers"] = headers
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(KICK_URL, download=False)
         return info["url"]
