@@ -6,6 +6,8 @@ import os
 import time
 import io
 import re
+import subprocess # 👈 ffmpeg চালানোর জন্য যোগ করা হলো
+import numpy as np # 👈 ছবি প্রসেস করার জন্য যোগ করা হলো
 from datetime import datetime
 
 # গোপন তথ্যগুলো
@@ -60,7 +62,6 @@ def get_stream_url(headers):
         "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best", 
         "noplaylist": True, 
         "live_from_start": False
-        # 👈 impersonate বাদ দেওয়া হয়েছে
     }
     if headers:
         ydl_opts["http_headers"] = headers
@@ -68,22 +69,33 @@ def get_stream_url(headers):
         info = ydl.extract_info(KICK_URL, download=False)
         return info["url"]
 
+# 👇 সম্পূর্ণ নতুন grab_frame (ffmpeg দিয়ে)
 def grab_frame(stream_url):
-    # OpenCV-কে সরাসরি FFmpeg ব্যাকএন্ড ব্যবহার করতে বলা হচ্ছে
-    cap = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
-    if not cap.isOpened():
-        return None
-    
-    # নেটওয়ার্ক স্ট্রিমের জন্য বাফার এবং টাইমআউট সেট করা
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)
-    cap.set(cv2.CAP_PROP_TIMEOUT, 10000) # ১০ সেকেন্ড টাইমআউট
-    
-    for _ in range(10):
-        cap.read()
+    try:
+        cmd = [
+            'ffmpeg',
+            '-y',                        # ওভাররাইট
+            '-loglevel', 'quiet',        # লগ দেখাবে না
+            '-user_agent', 'Mozilla/5.0',# ডামি ইউজার এজেন্ট
+            '-verify_certificate', '0',  # SSL ইগনোর
+            '-i', stream_url,            # স্ট্রিম লিংক
+            '-frames:v', '1',            # ১টা ফ্রেম
+            '-f', 'image2pipe',          # পাইপে ছবি দেবে
+            '-vcodec', 'mjpeg',          # jpg ফরম্যাটে
+            '-'
+        ]
         
-    ret, frame = cap.read()
-    cap.release()
-    return frame if ret else None
+        process = subprocess.run(cmd, capture_output=True, timeout=20)
+        
+        if process.returncode == 0 and process.stdout:
+            image_bytes = process.stdout
+            frame = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
+            return frame
+        else:
+            return None
+    except Exception as e:
+        print(f"FFmpeg grab error: {e}", flush=True)
+        return None
 
 def send_telegram_photo(frame, caption, box_coords=None, keyword=None):
     if not TELEGRAM_BOT_TOKEN:
