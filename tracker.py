@@ -15,18 +15,18 @@ KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 KICK_CURL = os.environ.get("KICK_CURL", "") 
 
-# 👇 শুধু গ্রুপের আইডি ডিফল্টভাবে সেট করা হলো (এখানে :1 নেই)
+# 👇 এখানে গ্রুপের আইডির শেষে :1 যোগ করা হলো (যাতে General topic-এ যায়)
 chat_ids_str = os.environ.get("TELEGRAM_CHAT_ID", "")
 if not chat_ids_str.strip():
-    chat_ids_str = "8949091966,-1004493539395"
+    chat_ids_str = "8949091966,-1004493539395:1"  # পার্সোনাল, গ্রুপ:১
 
 TELEGRAM_CHAT_IDS = [cid.strip() for cid in chat_ids_str.split(",") if cid.strip()]
 
-SCAN_DURATION = 18000   # ৫ ঘণ্টা
-SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর পর স্ক্যান
-HEARTBEAT_INTERVAL = 1800 # প্রতি ৩০ মিনিট পর পর স্ট্যাটাস ছবি
-CENTER_COOLDOWN = 120   # আসল অ্যালার্টের জন্য ২ মিনিট
-DEBUG_COOLDOWN = 60     # ডিবাগ ছবি পাঠানোর কুলডাউন
+SCAN_DURATION = 18000
+SCAN_INTERVAL = 10
+HEARTBEAT_INTERVAL = 1800
+CENTER_COOLDOWN = 120
+DEBUG_COOLDOWN = 60
 
 last_debug_time = 0
 END_WARNING_SENT = False
@@ -52,17 +52,21 @@ def send_telegram_message(text):
     if not TELEGRAM_BOT_TOKEN:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    
     for chat_id in TELEGRAM_CHAT_IDS:
-        payload = {"chat_id": chat_id, "text": text} 
-        
-        # 👇 গ্রুপের (Forum) জন্য message_thread_id যোগ করা হলো
-        if chat_id.startswith("-100"):
-            payload["message_thread_id"] = 1
+        # চ্যাট আইডি থেকে :1 আলাদা করা
+        if ":" in chat_id:
+            real_id, thread_id = chat_id.split(":")
+            payload = {"chat_id": real_id, "text": text, "message_thread_id": int(thread_id)}
+        else:
+            payload = {"chat_id": chat_id, "text": text}
             
         try:
             r = requests.post(url, json=payload, timeout=10)
             if r.status_code != 200:
                 print(f"[ERR] MSG to {chat_id} failed: {r.text}", flush=True)
+            else:
+                print(f"[SENT] Message to {chat_id} -> OK", flush=True)
         except Exception as e:
             print(f"[ERR] MSG exception to {chat_id}: {e}", flush=True)
 
@@ -130,11 +134,13 @@ def send_telegram_photo(frame, caption, box_coords=None, keyword=None):
     for chat_id in TELEGRAM_CHAT_IDS:
         photo_bytes = io.BytesIO(buffer)
         photo_bytes.seek(0)
-        payload = {"chat_id": chat_id, "caption": caption}
         
-        # 👇 গ্রুপের (Forum) জন্য message_thread_id যোগ করা হলো
-        if chat_id.startswith("-100"):
-            payload["message_thread_id"] = 1
+        # 👇 এখানে গ্রুপের জন্য message_thread_id সেট করা হলো
+        if ":" in chat_id:
+            real_id, thread_id = chat_id.split(":")
+            payload = {"chat_id": real_id, "caption": caption, "message_thread_id": int(thread_id)}
+        else:
+            payload = {"chat_id": chat_id, "caption": caption}
             
         files = {"photo": ("screenshot.jpg", photo_bytes, "image/jpeg")}
         
