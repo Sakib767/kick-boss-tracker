@@ -15,18 +15,18 @@ KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 KICK_CURL = os.environ.get("KICK_CURL", "") 
 
-# 👇 এখানে গ্রুপের আইডির শেষে :1 যোগ করা হলো (যাতে General topic-এ যায়)
+# 👇 চ্যাট আইডি (এখান থেকে :1 সরিয়ে দেওয়া হয়েছে)
 chat_ids_str = os.environ.get("TELEGRAM_CHAT_ID", "")
 if not chat_ids_str.strip():
-    chat_ids_str = "8949091966,-1004493539395:1"  # পার্সোনাল, গ্রুপ:১
+    chat_ids_str = "8949091966,-1004493539395"
 
 TELEGRAM_CHAT_IDS = [cid.strip() for cid in chat_ids_str.split(",") if cid.strip()]
 
-SCAN_DURATION = 18000
-SCAN_INTERVAL = 10
-HEARTBEAT_INTERVAL = 1800
-CENTER_COOLDOWN = 120
-DEBUG_COOLDOWN = 60
+SCAN_DURATION = 18000   # ৫ ঘণ্টা
+SCAN_INTERVAL = 10      # প্রতি ১০ সেকেন্ড পর পর স্ক্যান
+HEARTBEAT_INTERVAL = 1800 # প্রতি ৩০ মিনিট পর পর স্ট্যাটাস ছবি
+CENTER_COOLDOWN = 120   # আসল অ্যালার্টের জন্য ২ মিনিট
+DEBUG_COOLDOWN = 60     # ডিবাগ ছবি পাঠানোর কুলডাউন
 
 last_debug_time = 0
 END_WARNING_SENT = False
@@ -54,13 +54,7 @@ def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     
     for chat_id in TELEGRAM_CHAT_IDS:
-        # চ্যাট আইডি থেকে :1 আলাদা করা
-        if ":" in chat_id:
-            real_id, thread_id = chat_id.split(":")
-            payload = {"chat_id": real_id, "text": text, "message_thread_id": int(thread_id)}
-        else:
-            payload = {"chat_id": chat_id, "text": text}
-            
+        payload = {"chat_id": chat_id, "text": text}
         try:
             r = requests.post(url, json=payload, timeout=10)
             if r.status_code != 200:
@@ -135,13 +129,7 @@ def send_telegram_photo(frame, caption, box_coords=None, keyword=None):
         photo_bytes = io.BytesIO(buffer)
         photo_bytes.seek(0)
         
-        # 👇 এখানে গ্রুপের জন্য message_thread_id সেট করা হলো
-        if ":" in chat_id:
-            real_id, thread_id = chat_id.split(":")
-            payload = {"chat_id": real_id, "caption": caption, "message_thread_id": int(thread_id)}
-        else:
-            payload = {"chat_id": chat_id, "caption": caption}
-            
+        payload = {"chat_id": chat_id, "caption": caption}
         files = {"photo": ("screenshot.jpg", photo_bytes, "image/jpeg")}
         
         try:
