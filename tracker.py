@@ -15,7 +15,7 @@ KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 KICK_CURL = os.environ.get("KICK_CURL", "") 
 
-# 👇 চ্যাট আইডি ডিফল্টভাবে সেট করা হলো (গ্রুপের জন্য :1 যোগ করা হয়েছে)
+# 👇 চ্যাট আইডি সেট (এখানে :1 যোগ করা আছে)
 chat_ids_str = os.environ.get("TELEGRAM_CHAT_ID", "")
 if not chat_ids_str.strip():
     chat_ids_str = "8949091966,-1004493539395:1"
@@ -55,9 +55,11 @@ def send_telegram_message(text):
     for chat_id in TELEGRAM_CHAT_IDS:
         payload = {"chat_id": chat_id, "text": text} 
         try:
-            requests.post(url, json=payload, timeout=10)
+            r = requests.post(url, json=payload, timeout=10)
+            if r.status_code != 200:
+                print(f"[ERR] MSG to {chat_id} failed: {r.text}", flush=True)
         except Exception as e:
-            print(f"[ERR] Message failed to {chat_id}: {e}", flush=True)
+            print(f"[ERR] MSG exception to {chat_id}: {e}", flush=True)
 
 def get_stream_url(headers):
     ydl_opts = {
@@ -81,20 +83,10 @@ def get_stream_url(headers):
 def grab_frame(stream_url):
     try:
         cmd = [
-            'ffmpeg',
-            '-y',
-            '-loglevel', 'error',
-            '-user_agent', 'Mozilla/5.0',
-            '-tls_verify', '0',          # SSL ইগনোর
-            '-analyzeduration', '10M',
-            '-probesize', '10M',
-            '-i', stream_url,
-            '-frames:v', '1',
-            '-f', 'image2pipe',
-            '-vcodec', 'mjpeg',
-            '-'
+            'ffmpeg', '-y', '-loglevel', 'error', '-user_agent', 'Mozilla/5.0',
+            '-tls_verify', '0', '-analyzeduration', '10M', '-probesize', '10M',
+            '-i', stream_url, '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-'
         ]
-        
         process = subprocess.run(cmd, capture_output=True, timeout=20)
         
         if process.returncode == 0 and process.stdout:
@@ -104,7 +96,7 @@ def grab_frame(stream_url):
         else:
             if process.stderr:
                 err_msg = process.stderr.decode('utf-8', errors='ignore').strip()
-                print(f"FFmpeg debug: {err_msg[:250]}", flush=True)
+                print(f"FFmpeg debug: {err_msg[:200]}", flush=True)
             return None
     except Exception as e:
         print(f"FFmpeg grab error: {e}", flush=True)
@@ -141,9 +133,9 @@ def send_telegram_photo(frame, caption, box_coords=None, keyword=None):
             if r.status_code == 200:
                 print(f"[SENT] Photo to {chat_id} -> OK", flush=True)
             else:
-                print(f"[ERR] Telegram rejected photo to {chat_id}! Reason: {r.text}", flush=True)
+                print(f"[ERR] PHOTO to {chat_id} failed! Reason: {r.text}", flush=True)
         except Exception as e:
-            print(f"[ERR] Photo failed to {chat_id}: {e}", flush=True)
+            print(f"[ERR] PHOTO exception to {chat_id}: {e}", flush=True)
             
     time.sleep(2)
 
