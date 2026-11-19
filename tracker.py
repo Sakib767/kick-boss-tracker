@@ -15,8 +15,11 @@ KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 KICK_CURL = os.environ.get("KICK_CURL", "") 
 
-# Telegram Chat IDs
+# 👇 চ্যাট আইডি ডিফল্টভাবে সেট করা হলো (সিক্রেট খালি থাকলেও কাজ করবে)
 chat_ids_str = os.environ.get("TELEGRAM_CHAT_ID", "")
+if not chat_ids_str.strip():
+    chat_ids_str = "8949091966,-1004493539395"
+
 TELEGRAM_CHAT_IDS = [cid.strip() for cid in chat_ids_str.split(",") if cid.strip()]
 
 SCAN_DURATION = 18000   # ৫ ঘণ্টা
@@ -79,16 +82,16 @@ def grab_frame(stream_url):
     try:
         cmd = [
             'ffmpeg',
-            '-y',                        # ওভাররাইট
-            '-loglevel', 'error',        # শুধু এরর দেখাবে
+            '-y',
+            '-loglevel', 'error',
             '-user_agent', 'Mozilla/5.0',
-            '-tls_verify', '0',          # 👈 SSL ইগনোর (আগের verify_certificate এর বদলে)
-            '-analyzeduration', '10M',   # স্ট্রিম অ্যানালাইসিস টাইম বাড়ানো হলো
-            '-probesize', '10M',         # স্ট্রিম ডাটা পড়ার সাইজ বাড়ানো হলো
-            '-i', stream_url,            
-            '-frames:v', '1',            # ১টা ফ্রেম নেবে
-            '-f', 'image2pipe',          
-            '-vcodec', 'mjpeg',          
+            '-tls_verify', '0',          # SSL ইগনোর
+            '-analyzeduration', '10M',
+            '-probesize', '10M',
+            '-i', stream_url,
+            '-frames:v', '1',
+            '-f', 'image2pipe',
+            '-vcodec', 'mjpeg',
             '-'
         ]
         
