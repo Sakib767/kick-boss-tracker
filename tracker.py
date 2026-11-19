@@ -15,10 +15,10 @@ KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 KICK_CURL = os.environ.get("KICK_CURL", "") 
 
-# 👇 চ্যাট আইডি ডিফল্টভাবে সেট করা হলো (সিক্রেট খালি থাকলেও কাজ করবে)
+# 👇 চ্যাট আইডি ডিফল্টভাবে সেট করা হলো (গ্রুপের জন্য :1 যোগ করা হয়েছে)
 chat_ids_str = os.environ.get("TELEGRAM_CHAT_ID", "")
 if not chat_ids_str.strip():
-    chat_ids_str = "8949091966,-1004493539395"
+    chat_ids_str = "8949091966,-1004493539395:1"
 
 TELEGRAM_CHAT_IDS = [cid.strip() for cid in chat_ids_str.split(",") if cid.strip()]
 
