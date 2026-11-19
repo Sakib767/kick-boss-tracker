@@ -15,10 +15,10 @@ KICK_URL = os.environ.get("KICK_URL", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 KICK_CURL = os.environ.get("KICK_CURL", "") 
 
-# 👇 চ্যাট আইডি সেট (এখানে :1 যোগ করা আছে)
+# 👇 শুধু গ্রুপের আইডি ডিফল্টভাবে সেট করা হলো (এখানে :1 নেই)
 chat_ids_str = os.environ.get("TELEGRAM_CHAT_ID", "")
 if not chat_ids_str.strip():
-    chat_ids_str = "8949091966,-1004493539395:1"
+    chat_ids_str = "8949091966,-1004493539395"
 
 TELEGRAM_CHAT_IDS = [cid.strip() for cid in chat_ids_str.split(",") if cid.strip()]
 
@@ -54,6 +54,11 @@ def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     for chat_id in TELEGRAM_CHAT_IDS:
         payload = {"chat_id": chat_id, "text": text} 
+        
+        # 👇 গ্রুপের (Forum) জন্য message_thread_id যোগ করা হলো
+        if chat_id.startswith("-100"):
+            payload["message_thread_id"] = 1
+            
         try:
             r = requests.post(url, json=payload, timeout=10)
             if r.status_code != 200:
@@ -126,6 +131,11 @@ def send_telegram_photo(frame, caption, box_coords=None, keyword=None):
         photo_bytes = io.BytesIO(buffer)
         photo_bytes.seek(0)
         payload = {"chat_id": chat_id, "caption": caption}
+        
+        # 👇 গ্রুপের (Forum) জন্য message_thread_id যোগ করা হলো
+        if chat_id.startswith("-100"):
+            payload["message_thread_id"] = 1
+            
         files = {"photo": ("screenshot.jpg", photo_bytes, "image/jpeg")}
         
         try:
